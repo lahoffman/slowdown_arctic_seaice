@@ -1,0 +1,92 @@
+
+Processing Steps for Variables
+variable = [aice, sst, u200, v200, z200, siextent]
+
+    0.0 Download
+    0.1 Monthly, Yearly, JJA
+    0.2 Combine
+
+---------------------------------------------------------------------------------------
+siextent
+    0.0 Download
+        DO.0_aice_download_1990-2100
+            wget downloads aice (monthly) from CESM2 to /cofast/lhoffman/cesmle/aice/raw
+            runs 'D0_aice_year_mon_vX.py'
+            deletes data in raw
+            
+    0.1 Monthly
+        D0.1_aice_year_mon_vX.py 
+            grab raw aice data file
+            build arctic and antarctic mask (aice >= 0.15; lat >= 50 OR lat <= 50)
+            calculate siextent (siextent = sum(aice*acello))
+            save siextentn and siextents
+                monthly: /cofast/lhoffman/cesmle/aice/siextent/BHISTcmip6_year_1001.001_siextent_199001-199912.nc
+        
+---------------------------------------------------------------------------------------
+
+---------------------------------------------------------------------------------------
+aice
+    0.0 Download
+        D0.0_aice_download_1990-2100
+            wget downloads aice (monthly) from CESM2 to /cofast/lhoffman/cesmle/aice/raw
+            runs 'D0_aice_year_mon_vX.py'
+            deletes data in raw
+
+    0.1 Monthly, Yearly
+        D0.1_aice_year_mon_vX.py
+            grab raw aice data file
+            save aice_monthly:
+                /cofast/lhoffman/cesmle/mon/
+            build arctic and antarctic mask (aice >= 0.15; lat >= 50 OR lat <= 50)
+            calcualte yearly mean aice for mask
+            save aice_yearly_mean
+                yearly: /cofast/lhoffman/cesmle/aice/year/
+
+    0.2 Combine
+        D0.2_aice_combine_year_1990-2100.py
+            concatenates yearly mean aice to one dataset
+            save aice: /cofast/lhoffman/cesmle/aice/year_combined/aice_cesmle_first50members_year_190001-210012.nc
+
+    0.3 Monthly
+        D0.3_aice_monthly.py 
+            reads in mon_combined
+            saves separate file for each month
+                /cofast/lhoffman/cesmle/aice/mon/aice_cesmle_first50members_mon_JAN_199001-210012.nc
+                /cofast/lhoffman/cesmle/aice/mon/aice_cesmle_last50members_mon_JAN_199001-210012.nc
+
+    0.4 Re-grid (*** this makes the input to the CNN ***)
+        D0.4_aice_regrid_JJA.py
+            reads in:
+                aice: /cofast/lhoffman/cesmle/aice/mon/aice_cesmle_first50members_mon_JAN_199001-210012.nc
+                (lat,lon) aice: /cofast/lhoffman/cesmle/aice/raw/b.e21.BHISTcmip6.f09_g17.LE2-1001.001.cice.h.aice.185001-185912.nc
+                (lat,lon) sst: /cofast/lhoffman/cesmle/z200/raw/b.e21.BHISTcmip6.f09_g17.LE2-1001.001.cam.h1.Z200.18500101-18591231.nc
+            takes JJA mean
+            uses scipy.interpolate griddata to regrid aice to sst griddata ; plots for verification
+            saves re-gridded aice: /cofast/lhoffman/cesmle/cnn_slowdown/aice_regridded_sstgrid_JJA_1990-2100.nc
+                
+---------------------------------------------------------------------------------------
+
+
+---------------------------------------------------------------------------------------
+sst
+
+    0.0 Download
+        D0.0_sst_download_1990-2100
+            wget downloads sst (monthly) from CESM2 to /cofast/lhoffman/cesmle/sst/raw
+
+        
+    0.2 Combine
+        D0.2_sst_combine_mon_1990-2100.py
+            reads in raw data
+            concatenates members and years
+            saves: /cofast/lhoffman/cesmle/sst/mon_combined/sst_cesmle_first50members_mon_199001-210012.nc
+                   /cofast/lhoffman/cesmle/sst/mon_combined/sst_cesmle_last50members_mon_199001-210012.nc
+            
+    0.3 Monthly
+        D0.3_sst_monthly.py 
+            reads in mon_combined
+            saves separate file for each month
+                /cofast/lhoffman/cesmle/sst/mon/sst_cesmle_first50members_mon_JAN_199001-210012.nc
+                /cofast/lhoffman/cesmle/sst/mon/sst_cesmle_last50members_mon_JAN_199001-210012.nc
+    
+---------------------------------------------------------------------------------------
