@@ -1,0 +1,24 @@
+# ML environment requirements
+# Use environment-ml.yml for conda installation (STRONGLY recommended for TensorFlow)
+
+# Core scientific (older versions for TF compatibility)
+numpy==1.23.5
+scipy==1.10.1
+pandas==1.5.3
+
+# Data handling
+xarray==2023.1.0
+netcdf4==1.6.2
+
+# Plotting
+matplotlib==3.7.1
+cartopy==0.21.1
+cmocean==3.0.3
+
+# Machine Learning
+tensorflow==2.12.0
+scikit-learn==1.2.2
+innvestigate>=2.0.1
+
+# Note: TensorFlow installation is MUCH easier with conda!
+# Strongly recommend using environment-ml.yml instead of this file.
