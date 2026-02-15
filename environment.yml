@@ -1,19 +1,36 @@
-name: slowdown-standard
+name: slowdown-seaice
 channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.11
-  - numpy>=1.24
-  - scipy>=1.10
-  - pandas>=2.0
-  - xarray>=2023.0
-  - netcdf4>=1.6
-  - matplotlib>=3.7
-  - cartopy>=0.22
-  - cmocean>=3.0
+  # Python (restricted by TensorFlow 2.14)
+  - python=3.10
+
+  # Core scientific stack (compatible with TensorFlow 2.14)
+  - numpy=1.23.5
+  - scipy
+  - pandas
+
+  # Data handling
+  - xarray
+  - netcdf4
+  - openpyxl  # For Excel file reading/writing
+
+  # Plotting
+  - matplotlib
+  - cartopy
+  - cmocean
+
+  # Machine Learning
+  - tensorflow=2.14.0
+  - scikit-learn
+
+  # Development tools
   - jupyter
   - ipython
+
+  # pip packages
   - pip
   - pip:
-    - -e .  # Install the package in editable mode
+    - innvestigate>=2.0.1  # XAI library (requires TensorFlow 2.x)
+    - -e .  # Install this package in editable mode

@@ -40,6 +40,7 @@ setup(
         "pandas>=1.3.0",
         "xarray>=0.19.0",
         "netCDF4>=1.5.7",
+        "openpyxl>=3.0.0",  # For Excel files
         "matplotlib>=3.4.0",
         "cartopy>=0.20.0",
         "cmocean>=2.0",

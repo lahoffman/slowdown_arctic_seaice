@@ -1,11 +1,27 @@
-# Standard environment requirements
-# Use environment.yml for conda installation (recommended)
+# Arctic Sea Ice Slowdown Analysis - Requirements
+# Compatible with TensorFlow 2.14 and innvestigate
 
-numpy>=1.24.0
-scipy>=1.10.0
-pandas>=2.0.0
-xarray>=2023.0.0
-netcdf4>=1.6.0
-matplotlib>=3.7.0
-cartopy>=0.22.0
-cmocean>=3.0.0
+# Core scientific stack
+numpy==1.23.5
+scipy
+pandas
+
+# Data handling
+xarray
+netcdf4
+openpyxl  # For Excel files
+
+# Plotting
+matplotlib
+cartopy
+cmocean
+
+# Machine Learning (pinned for innvestigate compatibility)
+tensorflow==2.14.0
+scikit-learn
+
+# XAI
+innvestigate>=2.0.1
+
+# Note: Use environment.yml with conda for easier installation
+# TensorFlow installation via pip can be problematic - conda recommended
