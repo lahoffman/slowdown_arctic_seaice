@@ -253,7 +253,7 @@ if __name__ == '__main__':
     print("="*70)
     print("""
 # Complete workflow - download and process
-from src.data.download_cesmle import download_raw_data, process_cesmle_variable
+from slowdown.data.download_cesmle import download_raw_data, process_cesmle_variable
 
 # Step 1: Download raw data from UCAR
 download_raw_data(

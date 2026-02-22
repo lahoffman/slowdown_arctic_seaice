@@ -42,11 +42,12 @@ SMBB_MEMBERS = [
     1011.001, 1031.002, 1051.003, 1071.004, 1091.005, 1111.006, 1131.007, 1151.008, 1171.009, '1191.010'
 ]
 
+
 # Variable configuration: maps variable names to their model component and URL paths
 VARIABLE_CONFIG = {
     'SST': {
-        'component': 'pop.h',
-        'url_path': 'ocn/proc/tseries/month_1/SST',
+        'component': 'cam.h0',
+        'url_path': 'atm/proc/tseries/month_1/SST',
         'var_name': 'SST'
     },
     'AICE': {

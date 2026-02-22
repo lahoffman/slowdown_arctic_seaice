@@ -16,8 +16,8 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from configs import paths, training
-from src.data import load_netcdf, load_cesm2_grid
-from src.visualization import (
+from slowdown.data import load_netcdf, load_cesm2_grid
+from slowdown.visualization import (
     setup_figure_style,
     plot_map,
     plot_timeseries

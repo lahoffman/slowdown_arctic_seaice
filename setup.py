@@ -13,6 +13,16 @@ if readme_file.exists():
 else:
     long_description = "Arctic sea ice slowdown analysis package"
 
+# src/ IS the slowdown package — map every sub-package to its src/ path.
+# find_packages(where="src") discovers: data, data.cesm2le, models, ...
+# We prefix each with "slowdown." so imports work as `from slowdown.data...`
+_sub = find_packages(where="src")
+_packages = ["slowdown"] + [f"slowdown.{p}" for p in _sub]
+_pkg_dir = {
+    "slowdown": "src",
+    **{f"slowdown.{p}": f"src/{p.replace('.', '/')}" for p in _sub},
+}
+
 setup(
     name="slowdown_arctic_seaice",
     version="0.1.0",
@@ -21,8 +31,9 @@ setup(
     description="Modular package for analyzing Arctic sea ice trends and climate indices",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/lahoffman/slowdown_arctic_seaice",
-    packages=find_packages(),
+    url="https://github.com/lahoffma/slowdown_arctic_seaice",
+    package_dir=_pkg_dir,
+    packages=_packages,
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Science/Research",

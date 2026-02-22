@@ -189,7 +189,7 @@ if __name__ == '__main__':
     print("="*70)
     print("""
 # Calculate sea ice extent
-from src.data.cesm2le import calculate_sea_ice_extent
+from slowdown.data.cesm2le import calculate_sea_ice_extent
 
 extent = calculate_sea_ice_extent(
     aice_file='/path/to/aice_JAN.nc',
@@ -198,7 +198,7 @@ extent = calculate_sea_ice_extent(
 )
 
 # Calculate sea ice area
-from src.data.cesm2le import calculate_sea_ice_area
+from slowdown.data.cesm2le import calculate_sea_ice_area
 
 area = calculate_sea_ice_area(
     aice_file='/path/to/aice_JAN.nc',
@@ -207,7 +207,7 @@ area = calculate_sea_ice_area(
 )
 
 # Regrid AICE to SST grid
-from src.data.cesm2le import regrid_aice_to_sst
+from slowdown.data.cesm2le import regrid_aice_to_sst
 
 regrid_aice_to_sst(
     aice_file='/path/to/aice_JAN.nc',
@@ -216,7 +216,7 @@ regrid_aice_to_sst(
 )
 
 # Batch process all months
-from src.data.cesm2le import batch_process_monthly_files
+from slowdown.data.cesm2le import batch_process_monthly_files
 
 batch_process_monthly_files(
     aice_dir='/path/to/aice/mon',
