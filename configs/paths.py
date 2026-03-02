@@ -46,6 +46,8 @@ elif Path('/Users/lahoffma/data/slowdowns').exists():
     DATA_ROOT = Path('/Users/lahoffma/data/slowdowns')
 elif Path('/cofast/lhoffman/slowdowns').exists():
     DATA_ROOT = Path('/cofast/lhoffman/slowdowns')
+elif Path('/mnt/tank/Oceanography/data/OGCM/LLC/Fronts/lohoff/arcticWatch').exists():
+    DATA_ROOT = Path('/mnt/tank/Oceanography/data/OGCM/LLC/Fronts/lohoff/arcticWatch')
 else:
     raise EnvironmentError(
         "\n\nCannot find the data root directory.\n"
