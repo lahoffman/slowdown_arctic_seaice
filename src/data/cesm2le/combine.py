@@ -153,7 +153,15 @@ def combine_ensemble_members(
                         f"Variable '{variable}' not found in {filepath.name}. "
                         f"Available data variables: {available}"
                     )
-                chunk_data = np.array(dataset.variables[data_key])
+                # Use raw[:] to get a masked array so that fill values
+                # (e.g. 1e30 on land points in CICE output) are properly
+                # masked.  np.array() alone ignores the mask, leaving huge
+                # fill values that cause overflow in downstream calculations.
+                raw = dataset.variables[data_key][:]
+                if hasattr(raw, 'filled'):
+                    chunk_data = raw.filled(np.nan).astype(np.float32)
+                else:
+                    chunk_data = np.array(raw, dtype=np.float32)
                 dataset.close()
                 member_data.append(chunk_data)
             except FileNotFoundError:
