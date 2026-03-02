@@ -105,6 +105,7 @@ CESM2LE_DIR = DATA_ROOT / 'cesm2le'
 CESM2LE_DIR.mkdir(parents=True, exist_ok=True)
 
 # raw  (downloaded files, organised by variable)
+# *** REMOVE THIS
 CESM2LE_RAW_DIR  = CESM2LE_DIR / 'raw'
 CESM2LE_RAW_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -114,11 +115,13 @@ CESM2LE_SST_DIR  = CESM2LE_DIR / 'sst'
 CESM2LE_AICE_DIR.mkdir(parents=True, exist_ok=True)
 CESM2LE_SST_DIR.mkdir(parents=True, exist_ok=True)
 
+
 # grid / ancillary  (used for regridding)
 CESM2LE_GRID_FILE = CESM2LE_RAW_DIR / 'b.e21.BHISTcmip6.f09_g17.LE2-1001.001.cam.h0.TREFHT.199001-199912.nc'
 LANDMASK_FILE     = CESM2LE_DIR / 'cnn_cesm2le_landmask.nc'
 
 # processed SST monthly (template — {month} filled at runtime)
+#***EDIT THIS
 CESM2LE_SST_MONTHLY = {
     'cmip6': str(CESM2LE_SST_DIR / 'sst_cesmle_cmip6members_mon_{month}_199001-210012.nc'),
     'smbb':  str(CESM2LE_SST_DIR / 'sst_cesmle_smbbmembers_mon_{month}_199001-210012.nc'),
