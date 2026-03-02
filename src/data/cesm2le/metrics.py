@@ -92,7 +92,7 @@ def calculate_sea_ice_extent(
     # Calculate extent: sum area where ice >= threshold
     # Sum over spatial dimensions (last 2 dimensions)
     spatial_dims = tuple(range(aice.ndim - 2, aice.ndim))
-    siextentn = (arctic_ice * tarea_broadcast).sum(axis=spatial_dims) / 1e12  # million km²
+    siextentn = np.nansum(arctic_ice * tarea_broadcast, axis=spatial_dims) / 1e12  # million km²
 
     # Close datasets
     ds_aice.close()
@@ -179,7 +179,7 @@ def calculate_sea_ice_area(
     # Calculate area: sum (concentration * area)
     # Sum over spatial dimensions (last 2 dimensions)
     spatial_dims = tuple(range(aice.ndim - 2, aice.ndim))
-    siarean = (arctic_aice * tarea_broadcast).sum(axis=spatial_dims) / 1e12  # million km²
+    siarean = np.nansum(arctic_aice * tarea_broadcast, axis=spatial_dims) / 1e12  # million km²
 
     # Close datasets
     ds_aice.close()
