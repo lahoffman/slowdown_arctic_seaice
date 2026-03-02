@@ -129,6 +129,11 @@ def combine_ensemble_members(
                     filename = f'b.e21.{scenario}.f09_g17.LE2-{member}.{component}.{frequency}.{var_upper}.{start_year}01-{end_year}12.nc'
 
             filepath = Path(raw_data_path) / filename
+            # Some variables use lowercase in the filename (e.g. 'aice')
+            # while others use uppercase (e.g. 'SST').  Fall back to lowercase.
+            if not filepath.exists():
+                filename = filename.replace(f'.{var_upper}.', f'.{var_lower}.')
+                filepath = Path(raw_data_path) / filename
 
             # Load data chunk
             try:
