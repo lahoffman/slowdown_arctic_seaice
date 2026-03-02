@@ -133,7 +133,22 @@ def combine_ensemble_members(
             # Load data chunk
             try:
                 dataset = nc.Dataset(filepath, 'r')
-                chunk_data = np.array(dataset.variables[var_lower])
+                # Variable names differ by component: CAM uses uppercase (e.g.
+                # 'SST'), CICE uses lowercase (e.g. 'aice').  Try both.
+                if var_lower in dataset.variables:
+                    data_key = var_lower
+                elif var_upper in dataset.variables:
+                    data_key = var_upper
+                else:
+                    available = [v for v in dataset.variables
+                                 if v not in ('time', 'lat', 'lon', 'lev',
+                                              'time_bnds', 'date', 'datesec')]
+                    dataset.close()
+                    raise KeyError(
+                        f"Variable '{variable}' not found in {filepath.name}. "
+                        f"Available data variables: {available}"
+                    )
+                chunk_data = np.array(dataset.variables[data_key])
                 dataset.close()
                 member_data.append(chunk_data)
             except FileNotFoundError:
