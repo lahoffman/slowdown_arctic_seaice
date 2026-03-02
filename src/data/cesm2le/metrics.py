@@ -61,6 +61,16 @@ def calculate_sea_ice_extent(
     ds_aice = xr.open_dataset(aice_file)
     ds_grid = xr.open_dataset(tarea_file)
 
+    # Resolve variable name — separate_by_month saves as '{var}_mon'
+    if aice_var not in ds_aice:
+        if aice_var + '_mon' in ds_aice:
+            aice_var = aice_var + '_mon'
+        else:
+            raise KeyError(
+                f"Variable '{aice_var}' not found. "
+                f"Available: {list(ds_aice.data_vars)}"
+            )
+
     # Get variables
     aice = ds_aice[aice_var].values
     tarea = ds_grid['tarea'].values  # Grid cell area in cm²
@@ -140,6 +150,16 @@ def calculate_sea_ice_area(
     # Load data
     ds_aice = xr.open_dataset(aice_file)
     ds_grid = xr.open_dataset(tarea_file)
+
+    # Resolve variable name — separate_by_month saves as '{var}_mon'
+    if aice_var not in ds_aice:
+        if aice_var + '_mon' in ds_aice:
+            aice_var = aice_var + '_mon'
+        else:
+            raise KeyError(
+                f"Variable '{aice_var}' not found. "
+                f"Available: {list(ds_aice.data_vars)}"
+            )
 
     # Get variables
     aice = ds_aice[aice_var].values
