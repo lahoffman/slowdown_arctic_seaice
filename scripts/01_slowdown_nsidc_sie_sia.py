@@ -15,8 +15,10 @@ Outputs (written to DATA_ROOT/nsidc/):
 Usage
 -----
   python scripts/01_slowdown_nsidc_sie_sia.py
-  python scripts/01_slowdown_nsidc_sie_sia.py --year 2024
   python scripts/01_slowdown_nsidc_sie_sia.py --start-year 1990 --window 10
+
+  **
+  python scripts/01_slowdown_nsidc_sie_sia.py --year 2025
 """
 
 import sys
