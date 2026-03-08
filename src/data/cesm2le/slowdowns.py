@@ -603,24 +603,22 @@ def compute_cesm2le_slowdowns(
 
         # Classify
         slowdown, _ = classify_slowdowns(trends_ens, threshold_slow)
-        riles, _    = classify_riles(trends_ens, threshold_ril)
+        #riles, _    = classify_riles(trends_ens, threshold_ril)
 
         n_slow  = int(slowdown.sum())
-        n_riles = int(riles.sum())
+        #n_riles = int(riles.sum())
         total   = slowdown.size
         print(f"  Slowdowns : {n_slow:5d} / {total}  ({100 * n_slow / total:.1f}%)")
-        print(f"  RILES     : {n_riles:5d} / {total}  ({100 * n_riles / total:.1f}%)")
+        #print(f"  RILES     : {n_riles:5d} / {total}  ({100 * n_riles / total:.1f}%)")
 
         # Save
         out_fname = (f'cesm2le_{variable}_slowdown_riles_{month}_'
                      f'{trend_start_year}-{end_year}.nc')
         save_slowdown_events(
             slowdown=slowdown,
-            riles=riles,
             trends_ens=trends_ens,
             trends_mean=trends_mean,
             threshold_slowdown=threshold_slow,
-            threshold_riles=threshold_ril,
             trend_years=trend_years,
             output_file=str(output_dir / out_fname),
             month_idx=month_idx,
