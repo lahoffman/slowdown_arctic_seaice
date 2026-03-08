@@ -94,7 +94,7 @@ def load_sie_monthly_files(
     month: str,
     member_groups: List[str] = ['first50', 'last50'],
     variable: str = 'sie',
-    start_year: int = 1850,
+    start_year: int = 1990,
     end_year: int = 2100,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -132,7 +132,7 @@ def load_sie_monthly_files(
     Examples
     --------
     >>> sie, years = load_sie_monthly_files('/data/cesm2le/sie', 'SEP')
-    >>> sie.shape   # (100, 251)  for 100 members, 1850-2100
+    >>> sie.shape   # (100, 111)  for 100 members, 1990-2100
     """
     data_dir = Path(data_dir)
     years = np.arange(start_year, end_year + 1)
@@ -501,7 +501,7 @@ def compute_cesm2le_slowdowns(
     months: Optional[List[str]] = None,
     variable: str = 'sie',
     member_groups: List[str] = ['first50', 'last50'],
-    start_year: int = 1850,
+    start_year: int = 1990,
     end_year: int = 2100,
     trend_start_year: int = 1990,
     window: int = 10,
@@ -674,8 +674,8 @@ if __name__ == '__main__':
         help='Output directory (default: DATA_ROOT/cesm2le/slowdowns)'
     )
     parser.add_argument(
-        '--start-year',       type=int, default=1850,
-        help='First year in the SIE data (default: 1850)'
+        '--start-year',       type=int, default=1990,
+        help='First year in the SIE data (default: 1990)'
     )
     parser.add_argument(
         '--end-year',         type=int, default=2100,
