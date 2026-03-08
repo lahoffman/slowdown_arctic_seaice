@@ -363,32 +363,26 @@ def classify_riles(
 
 def save_slowdown_events(
     slowdown: np.ndarray,
-    riles: np.ndarray,
     trends_ens: np.ndarray,
     trends_mean: np.ndarray,
     threshold_slowdown: np.ndarray,
-    threshold_riles: np.ndarray,
     trend_years: np.ndarray,
     output_file: str,
     month_idx: Optional[int] = None
 ) -> None:
     """
-    Save CESM2-LE slowdown and RILES events to NetCDF.
+    Save CESM2-LE slowdown events to NetCDF.
 
     Parameters
     ----------
     slowdown : np.ndarray
         Slowdown binary mask, shape (nens, n_trends)
-    riles : np.ndarray
-        RILES binary mask, shape (nens, n_trends)
     trends_ens : np.ndarray
         Per-member trends, shape (nens, n_trends), M km² yr⁻¹
     trends_mean : np.ndarray
         Ensemble-mean trend, shape (n_trends,), M km² yr⁻¹
     threshold_slowdown : np.ndarray
         Time-varying slowdown threshold, shape (n_trends,), M km² yr⁻¹
-    threshold_riles : np.ndarray
-        Time-varying RILES threshold, shape (n_trends,), M km² yr⁻¹
     trend_years : np.ndarray
         Starting year of each 10-yr trend window, shape (n_trends,)
     output_file : str
@@ -402,10 +396,73 @@ def save_slowdown_events(
     ds = xr.Dataset(
         {
             "slowdown":           (("nens", "nyr"), slowdown),
-            "riles":              (("nens", "nyr"), riles),
             "linear_trends_ens":  (("nens", "nyr"), trends_ens),
             "linear_trends_mean": (("nyr",),         trends_mean),
             "threshold_slowdown": (("nyr",),          threshold_slowdown),
+        },
+        coords={
+            "nens": np.arange(nens),
+            "nyr":  trend_years,
+        },
+    )
+
+    month_str = f" month {month_idx + 1}" if month_idx is not None else ""
+    ds.attrs["description"] = (
+        f"CESM2-LE slowdown events{month_str}: 10-yr decadal trends "
+        f"classified against NSIDC-scaled model thresholds."
+    )
+    ds.attrs["threshold_method"] = (
+        "model_threshold(t) = fraction_nsidc × ensemble_mean_trend(t)"
+    )
+
+    ds["slowdown"].attrs["description"]          = "1 = slowdown event, 0 = normal"
+    ds["linear_trends_ens"].attrs["units"]       = "M km2 yr-1"
+    ds["linear_trends_mean"].attrs["units"]      = "M km2 yr-1"
+    ds["threshold_slowdown"].attrs["units"]      = "M km2 yr-1"
+    ds["nyr"].attrs["description"]               = "Starting year of each 10-yr trend window"
+
+    encoding = {v: {"zlib": True, "complevel": 4} for v in ds.data_vars}
+    ds.to_netcdf(output_file, format="NETCDF4", encoding=encoding)
+    print(f"✓ Saved slowdown events to: {output_file}")
+
+
+def save_riles_events(
+    riles: np.ndarray,
+    trends_ens: np.ndarray,
+    trends_mean: np.ndarray,
+    threshold_riles: np.ndarray,
+    trend_years: np.ndarray,
+    output_file: str,
+    month_idx: Optional[int] = None
+) -> None:
+    """
+    Save CESM2-LE RILES events to NetCDF.
+
+    Parameters
+    ----------
+    riles : np.ndarray
+        RILES binary mask, shape (nens, n_trends)
+    trends_ens : np.ndarray
+        Per-member trends, shape (nens, n_trends), M km² yr⁻¹
+    trends_mean : np.ndarray
+        Ensemble-mean trend, shape (n_trends,), M km² yr⁻¹
+    threshold_riles : np.ndarray
+        Time-varying RILES threshold, shape (n_trends,), M km² yr⁻¹
+    trend_years : np.ndarray
+        Starting year of each 10-yr trend window, shape (n_trends,)
+    output_file : str
+        Destination NetCDF path
+    month_idx : int, optional
+        0-based month index used for the description attribute
+    """
+    Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+    nens = riles.shape[0]
+
+    ds = xr.Dataset(
+        {
+            "riles":              (("nens", "nyr"), riles),
+            "linear_trends_ens":  (("nens", "nyr"), trends_ens),
+            "linear_trends_mean": (("nyr",),         trends_mean),
             "threshold_riles":    (("nyr",),          threshold_riles),
         },
         coords={
@@ -416,25 +473,22 @@ def save_slowdown_events(
 
     month_str = f" month {month_idx + 1}" if month_idx is not None else ""
     ds.attrs["description"] = (
-        f"CESM2-LE slowdown and RILES events{month_str}: 10-yr decadal trends "
+        f"CESM2-LE RILES events{month_str}: 10-yr decadal trends "
         f"classified against NSIDC-scaled model thresholds."
     )
     ds.attrs["threshold_method"] = (
         "model_threshold(t) = fraction_nsidc × ensemble_mean_trend(t)"
     )
 
-    ds["slowdown"].attrs["description"]          = "1 = slowdown event, 0 = normal"
     ds["riles"].attrs["description"]             = "1 = RILES event, 0 = normal"
     ds["linear_trends_ens"].attrs["units"]       = "M km2 yr-1"
     ds["linear_trends_mean"].attrs["units"]      = "M km2 yr-1"
-    ds["threshold_slowdown"].attrs["units"]      = "M km2 yr-1"
     ds["threshold_riles"].attrs["units"]         = "M km2 yr-1"
     ds["nyr"].attrs["description"]               = "Starting year of each 10-yr trend window"
 
     encoding = {v: {"zlib": True, "complevel": 4} for v in ds.data_vars}
     ds.to_netcdf(output_file, format="NETCDF4", encoding=encoding)
-    print(f"✓ Saved slowdown/RILES events to: {output_file}")
-
+    print(f"✓ Saved RILES events to: {output_file}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level pipeline
@@ -571,6 +625,16 @@ def compute_cesm2le_slowdowns(
             output_file=str(output_dir / out_fname),
             month_idx=month_idx,
         )
+
+        #save_riles_events(
+        #    riles=riles,
+        #    trends_ens=trends_ens,
+        #    trends_mean=trends_mean,
+        #    threshold_riles=threshold_ril,
+        #    trend_years=trend_years,
+        #    output_file=str(output_dir / out_fname),
+        #    month_idx=month_idx,
+        #)
 
     print(f"\nAll done. Outputs written to: {output_dir}")
 
