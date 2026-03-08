@@ -276,9 +276,11 @@ def enso_phase_labels_ensemble(
 
 def load_sst_monthly_files(
     data_dir: str,
-    start_year: int = 1850,
+    start_year: int = 1990,
     end_year: int = 2100,
     member_groups: List[str] = ['first50', 'last50'],
+    file_start_year: Optional[int] = None,
+    file_end_year: Optional[int] = None,
     file_pattern: Optional[str] = None,
     var_name: Optional[str] = None
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -289,22 +291,25 @@ def load_sst_monthly_files(
     member groups, and interleaves months to produce a contiguous monthly timeseries.
 
     Expected file naming (output of separate_by_month):
-        sst_cesmle_{group}members_mon_{MONTH}_{start_year}01-{end_year}12.nc
-    Legacy variable name ('ssthm') from x_old scripts is also supported.
+        sst_cesmle_{group}members_mon_{MONTH}_{file_start_year}01-{file_end_year}12.nc
 
     Parameters
     ----------
     data_dir : str
         Directory containing the monthly NetCDF files
     start_year : int, optional
-        First year in the dataset (default: 1850)
+        First year of the data range (used to build the years array, default: 1990)
     end_year : int, optional
-        Last year in the dataset (default: 2100)
+        Last year of the data range (used to build the years array, default: 2100)
     member_groups : list of str, optional
         Which member groups to load and concatenate (default: ['first50', 'last50'])
+    file_start_year : int, optional
+        Start year embedded in the filename. Defaults to start_year if not provided.
+    file_end_year : int, optional
+        End year embedded in the filename. Defaults to end_year if not provided.
     file_pattern : str, optional
-        Custom file pattern with {month}, {group}, {member_label}, {start_year},
-        and {end_year} placeholders. Overrides the default naming convention.
+        Custom file pattern with {month}, {group}, {member_label}, {file_start_year},
+        and {file_end_year} placeholders. Overrides the default naming convention.
     var_name : str, optional
         Variable name inside the NetCDF files. If None, auto-detected from
         ['sst_mon', 'ssthm', 'sst', 'SST'].
@@ -323,12 +328,16 @@ def load_sst_monthly_files(
     Examples
     --------
     >>> sst, lat, lon, years = load_sst_monthly_files(
-    ...     '/data/cesm2le/sst/mon', start_year=1850, end_year=2100)
-    >>> sst.shape  # (100, 3012, 192, 288)
+    ...     '/data/cesm2le/sst/mon', start_year=1990, end_year=2100)
+    >>> sst.shape  # (100, 1332, 192, 288)
     """
     data_dir = Path(data_dir)
     nyear = end_year - start_year + 1
     years = np.repeat(np.arange(start_year, end_year + 1), 12)
+
+    # Years used in the filename may differ from the data years array
+    fname_start = file_start_year if file_start_year is not None else start_year
+    fname_end   = file_end_year   if file_end_year   is not None else end_year
 
     monthly_data = []   # list of 12 arrays, each (nens, nyear, nlat, nlon)
     lat = lon = None
@@ -342,11 +351,11 @@ def load_sst_monthly_files(
                 fname = file_pattern.format(
                     month=month_label, group=group,
                     member_label=member_label,
-                    start_year=start_year, end_year=end_year
+                    file_start_year=fname_start, file_end_year=fname_end
                 )
             else:
                 fname = (f'sst_cesmle_{member_label}_mon_{month_label}_'
-                         f'{start_year}01-{end_year}12.nc')
+                         f'{fname_start}01-{fname_end}12.nc')
 
             fpath = data_dir / fname
             if not fpath.exists():

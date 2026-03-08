@@ -120,8 +120,8 @@ def parse_args() -> argparse.Namespace:
              '(default: all three).',
     )
     parser.add_argument(
-        '--start-year', type=int, default=1850,
-        help='First year in the SST data (default: 1850).',
+        '--start-year', type=int, default=1990,
+        help='First year in the SST data (default: 1990).',
     )
     parser.add_argument(
         '--end-year', type=int, default=2100,
@@ -142,7 +142,7 @@ def main() -> None:
     print('CESM2-LE Climate Indices')
     print('=' * 70)
     print(f'  Indices    : {indices}')
-    print(f'  Years      : {args.start_year}–{args.end_year}')
+    print(f'  Years      : {args.start_year}–{args.end_year}  (file range)')
     print(f'  SST dir    : {_sst_monthly_dir()}')
     print(f'  Output dir : {_indices_dir()}')
     print(f'  Data root  : {paths.DATA_ROOT}')
