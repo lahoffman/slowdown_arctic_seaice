@@ -415,6 +415,13 @@ def load_sst_monthly_files(
         lon = np.arange(nlon, dtype=np.float32)
         print("Warning: lon coordinates not found in files; using index array.")
 
+    # Normalise longitude to 0–360°E.
+    # CESM SST files store lon as −180→180; all box bounds in this module
+    # use the 0–360 convention, so boxes like Niño3.4 (190–240°E) would
+    # find zero grid points if lon is not converted first.
+    if np.any(lon < 0):
+        lon = np.where(lon < 0, lon + 360.0, lon)
+
     # Interleave 12 monthly arrays into contiguous monthly timeseries
     # monthly_data[m] has shape (nens, nyear, nlat, nlon)
     # Stack along a new month axis → (nens, nyear, 12, nlat, nlon)
