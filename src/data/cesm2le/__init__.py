@@ -41,7 +41,7 @@ from .regrid import (
 )
 
 from .climate_indices import (
-    load_sst_monthly_files,
+    load_grid_latlon,
     compute_nino34_index,
     compute_enso_cp_tp_indices,
     compute_ipo_index,
@@ -78,7 +78,7 @@ __all__ = [
     # Regrid functions
     'regrid_aice_to_sst',
     # Climate index functions
-    'load_sst_monthly_files',
+    'load_grid_latlon',
     'compute_nino34_index',
     'compute_enso_cp_tp_indices',
     'compute_ipo_index',

@@ -41,7 +41,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from configs import paths
 from src.data.cesm2le.climate_indices import (
-    load_sst_monthly_files,
+    load_grid_latlon,
     compute_nino34_index,
     compute_enso_cp_tp_indices,
     compute_ipo_index,
