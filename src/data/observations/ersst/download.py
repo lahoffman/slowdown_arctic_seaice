@@ -9,6 +9,11 @@ Source: https://psl.noaa.gov/data/gridded/data.noaa.ersst.v5.html
 
 Author: Lauren Hoffman
 Email: lhoffma2@ucsc.edu
+
+Usage
+-----
+    python download_ersst.py /mnt/tank/Oceanography/data/OGCM/LLC/Fronts/lohoff/arcticWatch/ersst/
+
 """
 
 import subprocess
@@ -155,3 +160,17 @@ def load_ersst(
     print(f"  Grid: {len(lat)} lat × {len(lon)} lon")
 
     return sst, lat, lon, dates
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Download ERSSTv5 SST dataset")
+    parser.add_argument("output_dir", type=str, help="Directory to save ERSST file")
+    parser.add_argument("--dry-run", action="store_true", help="Print command without downloading")
+
+    args = parser.parse_args()
+
+    download_ersst(
+        output_dir=args.output_dir,
+        dry_run=args.dry_run
+    )

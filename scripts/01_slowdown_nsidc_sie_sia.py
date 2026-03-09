@@ -29,7 +29,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from configs import paths
-from slowdown.data.observations.nsidc import (
+from src.data.observations.nsidc import (
     preprocess_nsidc_sie,
     compute_decadal_trends,
     define_slowdown_threshold,

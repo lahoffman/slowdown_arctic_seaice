@@ -81,26 +81,29 @@ def _area_mean_ensemble(
     Parameters
     ----------
     sst : np.ndarray
-        SST data, shape (nens, ntime, nlat, nlon)
+        SST data, shape (nens, ntime_or_nyears, nlat, nlon)
     lat, lon : np.ndarray
-        1D coordinate arrays (lon in 0-360°E)
+        2D coordinate arrays (nlat, nlon) — TLAT/TLONG from ``load_grid_latlon``.
+        Longitude must be in 0–360°E.
     latmin, latmax, lonmin, lonmax : float
-        Box bounds
+        Box bounds (lon in 0–360°E)
 
     Returns
     -------
     np.ndarray
-        Area-mean timeseries, shape (nens, ntime)
+        Area-mean timeseries, shape (nens, ntime_or_nyears)
     """
-    lat_inds = np.where((lat >= latmin) & (lat <= latmax))[0]
-    lon_inds = np.where((lon >= lonmin) & (lon <= lonmax))[0]
-    subset = sst[:, :, lat_inds, :][:, :, :, lon_inds]   # (nens, ntime, nlat_sub, nlon_sub)
+    # 2D spatial mask for the box
+    mask = (lat >= latmin) & (lat <= latmax) & (lon >= lonmin) & (lon <= lonmax)
+    # (nlat, nlon) boolean
 
-    wlat = np.cos(np.deg2rad(lat[lat_inds]))
-    wlat = wlat / np.nansum(wlat)
+    # Cos(lat) weights — zero outside the box
+    wlat = np.where(mask, np.cos(np.deg2rad(lat)), 0.0)  # (nlat, nlon)
+    wsum = np.nansum(wlat)
 
-    lat_weighted = np.nanmean(subset * wlat[None, None, :, None], axis=(2,3))  # (nens, ntime, nlon_sub)
-    return lat_weighted   # (nens, ntime)
+    # Weighted sum over spatial dims (axis 2 and 3), normalised by weight sum
+    # sst: (nens, ntime, nlat, nlon); wlat: (nlat, nlon)
+    return np.nansum(sst * wlat[None, None, :, :], axis=(2, 3)) / wsum
 
 
 def _monthly_anoms_ensemble(
@@ -109,29 +112,36 @@ def _monthly_anoms_ensemble(
     baseline: Tuple[int, int] = (1990, 2020)
 ) -> np.ndarray:
     """
-    Remove per-member monthly climatology over a baseline period.
+    Remove the baseline-period climatology from an ensemble data array.
+
+    Axis 0 is ensemble members; axis 1 is the time dimension indexed by
+    `years`. Works for any trailing shape — e.g. 2D (nens, nyears) for a
+    1-D time series or 4D (nens, nyears, nlat, nlon) for a gridded field.
+
+    When computing the IPO per-month loop, this is called on a single
+    calendar month's data (nens, nyears, nlat, nlon), where `years` is the
+    annual array np.arange(start_year, end_year+1).
 
     Parameters
     ----------
     ts : np.ndarray
-        Monthly timeseries, shape (nmonths, nens, ntime)
+        Data with shape (nens, nyears, ...).
     years : np.ndarray
-        Year for each time step, shape (ntime,). Assumes series starts in January.
+        Year value for each step along axis 1, shape (nyears,).
     baseline : tuple, optional
         (start_year, end_year) inclusive (default: 1990-2020)
 
     Returns
     -------
     np.ndarray
-        Anomalies, shape (nmonths, nens, ntime)
+        Anomalies relative to baseline mean, same shape as ts.
     """
-
     mask_base = (years >= baseline[0]) & (years <= baseline[1])
-    clim_m = np.nanmean(ts[:,mask_base], axis=1, keepdims=True) 
-    anoms = ts - clim_m
-    return anoms
+    clim_m = np.nanmean(ts[:, mask_base], axis=1, keepdims=True)
+    return ts - clim_m
 
-#TODO: edit this as it comes later in the code after smoothing 
+
+
 def _normalize_by_baseline_std_ensemble(
     x: np.ndarray,
     years: np.ndarray,
@@ -196,7 +206,7 @@ def chebyshev_lowpass(
     return filtfilt(b, a, ts, axis=-1)
 
 
-#TODO: double check this, enso is getting nans
+
 def enso_phase_labels_ensemble(
     index_arr: np.ndarray,
     threshold: float = 0.4,
@@ -268,164 +278,74 @@ def enso_phase_labels_ensemble(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-#TODO: EDIT THIS TO USE MONTHLY FILES... might not even need this function
-def load_sst_monthly_files(
-    data_dir: str,
-    start_year: int = 1990,
-    end_year: int = 2100,
-    member_groups: List[str] = ['first50', 'last50'],
-    file_start_year: Optional[int] = None,
-    file_end_year: Optional[int] = None,
-    file_pattern: Optional[str] = None,
-    var_name: Optional[str] = None
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def load_grid_latlon(grid_file: str) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Load CESM2-LE SST from per-month NetCDF files and assemble into a single array.
-
-    Loads 12 monthly files (one per calendar month), concatenates across ensemble
-    member groups, and interleaves months to produce a contiguous monthly timeseries.
-
-    Expected file naming (output of separate_by_month):
-        sst_cesmle_{group}members_mon_{MONTH}_{file_start_year}01-{file_end_year}12.nc
+    Load the 2D CESM2 ocean grid lat/lon from the grid file produced by
+    scripts/01_cesm2le_grid.py.
 
     Parameters
     ----------
-    data_dir : str
-        Directory containing the monthly NetCDF files
-    start_year : int, optional
-        First year of the data range (used to build the years array, default: 1990)
-    end_year : int, optional
-        Last year of the data range (used to build the years array, default: 2100)
-    member_groups : list of str, optional
-        Which member groups to load and concatenate (default: ['first50', 'last50'])
-    file_start_year : int, optional
-        Start year embedded in the filename. Defaults to start_year if not provided.
-    file_end_year : int, optional
-        End year embedded in the filename. Defaults to end_year if not provided.
-    file_pattern : str, optional
-        Custom file pattern with {month}, {group}, {member_label}, {file_start_year},
-        and {file_end_year} placeholders. Overrides the default naming convention.
-    var_name : str, optional
-        Variable name inside the NetCDF files. If None, auto-detected from
-        ['sst_mon', 'ssthm', 'sst', 'SST'].
+    grid_file : str or Path
+        Path to the grid NetCDF file (e.g.
+        ``paths.CESM2LE_SST_DIR / 'grid' / 'cesm2le_sst_grid.nc'``).
 
     Returns
     -------
-    sst : np.ndarray
-        SST array, shape (nens, ntime, nlat, nlon)
-    lat : np.ndarray
-        Latitude array, shape (nlat,)
-    lon : np.ndarray
-        Longitude array, shape (nlon,)
-    years : np.ndarray
-        Year for each time step, shape (ntime,)
-
-    Examples
-    --------
-    >>> sst, lat, lon, years = load_sst_monthly_files(
-    ...     '/data/cesm2le/sst/mon', start_year=1990, end_year=2100)
-    >>> sst.shape  # (100, 1332, 192, 288)
+    lat : np.ndarray, shape (nj, ni)
+        Latitude in degrees North.
+    lon : np.ndarray, shape (nj, ni)
+        Longitude in 0–360°E.
     """
-    data_dir = Path(data_dir)
-    nyear = end_year - start_year + 1
-    years = np.repeat(np.arange(start_year, end_year + 1), 12)
+    grid_file = Path(grid_file)
+    ds = nc.Dataset(str(grid_file), 'r')
+    ds.set_auto_mask(False)
 
-    # Years used in the filename may differ from the data years array
-    fname_start = file_start_year if file_start_year is not None else start_year
-    fname_end   = file_end_year   if file_end_year   is not None else end_year
+    lat = np.array(ds.variables['TLAT'][:], dtype=np.float64)
+    lon = np.array(ds.variables['TLONG'][:], dtype=np.float64)
 
-    monthly_data = []   # list of 12 arrays, each (nens, nyear, nlat, nlon)
-    lat = lon = None
+    ds.close()
+    return lat, lon
 
-    for month_label in MONTH_LABELS:
-        group_arrays = []
 
-        for group in member_groups:
-            member_label = f'{group}members'
-            if file_pattern is not None:
-                fname = file_pattern.format(
-                    month=month_label, group=group,
-                    member_label=member_label,
-                    file_start_year=fname_start, file_end_year=fname_end
-                )
-            else:
-                fname = (f'sst_cesmle_{member_label}_mon_{month_label}_'
-                         f'{fname_start}01-{fname_end}12.nc')
+def _load_month_sst_all_members(
+    sst_dir: Path,
+    month_label: str,
+    member_groups: List[str] = ['first50', 'last50'],
+) -> np.ndarray:
+    """
+    Load the SST field for all ensemble members for a single calendar month.
 
-            fpath = data_dir / fname
-            if not fpath.exists():
-                raise FileNotFoundError(
-                    f"Monthly SST file not found: {fpath}\n"
-                    f"Expected pattern: sst_cesmle_{{group}}members_mon_{{MONTH}}_"
-                    f"{start_year}01-{end_year}12.nc"
-                )
+    Reads the pre-separated monthly files:
+        sst_cesmle_{group}members_mon_{MONTH}_199001-210012.nc
 
-            ds = nc.Dataset(fpath, 'r')
-            ds.set_auto_mask(False)
+    The variable name inside each file must be ``sst_mon``.
 
-            # Auto-detect SST variable name
-            if var_name is not None:
-                vname = var_name
-            else:
-                candidates = ['sst_mon', 'ssthm', 'sst', 'SST']
-                vname = next((v for v in candidates if v in ds.variables), None)
-                if vname is None:
-                    skip = {'nem', 'nm', 'nx', 'ny', 'nyr', 'unique_years', 'lat', 'lon'}
-                    remaining = [v for v in ds.variables if v not in skip]
-                    if len(remaining) == 1:
-                        vname = remaining[0]
-                    else:
-                        ds.close()
-                        raise KeyError(
-                            f"Cannot identify SST variable in {fpath}. "
-                            f"Available: {list(ds.variables.keys())}"
-                        )
+    Parameters
+    ----------
+    sst_dir : Path
+        Directory containing the monthly SST files.
+    month_label : str
+        Three-letter calendar month, e.g. ``'JAN'``, ``'SEP'``.
+    member_groups : list of str, optional
+        Group names to concatenate (default: ``['first50', 'last50']``).
 
-            data_chunk = ds.variables[vname][:].astype(np.float32)  # (nens, nyear, nlat, nlon)
+    Returns
+    -------
+    sst : np.ndarray, shape (nens, nyears, nlat, nlon)
+    """
+    sst_dir = Path(sst_dir)
+    arrays  = []
+    for group in member_groups:
+        fpath = sst_dir / f'sst_cesmle_{group}members_mon_{month_label}_199001-210012.nc'
+        if not fpath.exists():
+            raise FileNotFoundError(f'Monthly SST file not found: {fpath}')
+        ds   = nc.Dataset(str(fpath), 'r')
+        ds.set_auto_mask(False)
+        data = ds.variables['sst_mon'][:].astype(np.float32)   # (n_group, nyears, nlat, nlon)
+        ds.close()
+        arrays.append(data)
+    return np.concatenate(arrays, axis=0)                       # (nens, nyears, nlat, nlon)
 
-            # Extract lat/lon on first successful load
-            if lat is None:
-                lat_key = next((k for k in ('lat', 'nx') if k in ds.variables), None)
-                lon_key = next((k for k in ('lon', 'ny') if k in ds.variables), None)
-                if lat_key:
-                    lat = np.array(ds.variables[lat_key])
-                if lon_key:
-                    lon = np.array(ds.variables[lon_key])
-
-            ds.close()
-            group_arrays.append(data_chunk)
-
-        # Concatenate member groups along ensemble axis (axis=0)
-        month_all = np.concatenate(group_arrays, axis=0)  # (nens, nyear, nlat, nlon)
-        monthly_data.append(month_all)
-
-    nens = monthly_data[0].shape[0]
-    nlat = monthly_data[0].shape[2]
-    nlon = monthly_data[0].shape[3]
-
-    if lat is None:
-        lat = np.arange(nlat, dtype=np.float32)
-        print("Warning: lat coordinates not found in files; using index array.")
-    if lon is None:
-        lon = np.arange(nlon, dtype=np.float32)
-        print("Warning: lon coordinates not found in files; using index array.")
-
-    # Normalise longitude to 0–360°E.
-    # CESM SST files store lon as −180→180; all box bounds in this module
-    # use the 0–360 convention, so boxes like Niño3.4 (190–240°E) would
-    # find zero grid points if lon is not converted first.
-    if np.any(lon < 0):
-        lon = np.where(lon < 0, lon + 360.0, lon)
-
-    # Interleave 12 monthly arrays into contiguous monthly timeseries
-    # monthly_data[m] has shape (nens, nyear, nlat, nlon)
-    # Stack along a new month axis → (nens, nyear, 12, nlat, nlon)
-    # then reshape → (nens, ntime, nlat, nlon)  where ntime = nyear * 12
-    monthly_stack = np.stack(monthly_data, axis=2)              # (nens, nyear, 12, nlat, nlon)
-    ntime = nyear * 12
-    sst = monthly_stack.reshape(nens, ntime, nlat, nlon)
-
-    return sst, lat, lon, years
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -433,7 +353,7 @@ def load_sst_monthly_files(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def compute_nino34_index(
-    sst: np.ndarray,
+    sst_dir: str,
     lat: np.ndarray,
     lon: np.ndarray,
     years: np.ndarray,
@@ -441,81 +361,126 @@ def compute_nino34_index(
     smooth_months: int = 5,
     threshold: float = 0.4,
     min_length: int = 6,
-    remove_forced: bool = True
+    remove_forced: bool = True,
+    member_groups: List[str] = ['first50', 'last50'],
+    verbose: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Compute the Niño3.4 ENSO index for the CESM2-LE ensemble.
 
-    Steps: (optional) remove forced signal → area mean → monthly anomalies
-           → smooth → normalize → phase labels.
+    Niño3.4 box: 5S–5N, 170W–120W (190–240°E).
 
-    Outputs are provided in both reshaped (nens, nyear, nmon) and flat
-    (nens, ntime) forms. The JJA subset can be extracted from the reshaped
-    output as nino34[:, :, 5:8].
+    Processing (per calendar month, in order):
+        1. Load monthly SST file → (nens, nyears, nlat, nlon)
+        2a. Remove forced signal (ensemble mean)
+        2b+c. Subset Niño3.4 box + cos(lat)-weighted area mean → (nens, nyears)
+        2d. Monthly anomalies: subtract baseline mean for that calendar month
+       Append per-month result → list of 12 × (nens, nyears)
+       Stack  → (12, nens, nyears)
+       Reshape → (nens, ntime)  [chronological: 12 months of yr1, yr2, …]
+       5-month running mean
+       Normalize by baseline-period standard deviation
+       Phase labels
 
     Parameters
     ----------
-    sst : np.ndarray
-        SST data, shape (nens, ntime, nlat, nlon)
+    sst_dir : str or Path
+        Directory containing the monthly SST files.
     lat, lon : np.ndarray
-        1D coordinate arrays (lon in 0-360°E)
+        2D arrays from ``load_grid_latlon(grid_file)``.
     years : np.ndarray
-        Year for each time step, shape (ntime,)
+        Annual year values, shape (nyears,), e.g. np.arange(1990, 2101).
     baseline : tuple, optional
-        Baseline period for climatology and normalization (default: 1990-2020)
+        Baseline period for anomaly and normalization (default: 1990-2020).
     smooth_months : int, optional
-        Running mean window in months (default: 5)
+        Running mean window in months (default: 5).
     threshold : float, optional
-        Normalized threshold for phase labeling (default: 0.4)
+        Normalized threshold for phase labeling (default: 0.4).
     min_length : int, optional
-        Minimum consecutive months for an ENSO event (default: 6)
+        Minimum consecutive months for an ENSO event (default: 6).
     remove_forced : bool, optional
-        Whether to subtract the ensemble mean before computing (default: True)
+        Subtract ensemble mean before computing (default: True).
+    member_groups : list of str, optional
+        SST file group names (default: ['first50', 'last50']).
+    verbose : bool, optional
+        Print progress (default: True).
 
     Returns
     -------
     nino34 : np.ndarray
-        Normalized Niño3.4 index, shape (nens, nyear, nmon=12)
+        Normalized Niño3.4 index, shape (nens, nyear, 12)
     nino34_flat : np.ndarray
-        Normalized Niño3.4 index, shape (nens, ntime)
+        Normalized Niño3.4 index, shape (nens, ntime)  [chronological]
     labels : np.ndarray
-        Phase labels (+1, 0, -1), shape (nens, nyear, nmon=12)
+        Phase labels (+1, 0, -1), shape (nens, nyear, 12)
     labels_flat : np.ndarray
         Phase labels, shape (nens, ntime)
 
     Examples
     --------
+    >>> lat, lon = load_grid_latlon(grid_file)   # 2D 
+    >>> years    = np.arange(1990, 2101)
     >>> nino34, nino34_flat, labels, labels_flat = compute_nino34_index(
-    ...     sst, lat, lon, years)
-    >>> nino34_jja    = nino34[:, :, 5:8]   # June–August subset
-    >>> labels_jja    = labels[:, :, 5:8]
+    ...     sst_dir, lat, lon, years)
+    >>> nino34_jja = nino34[:, :, 5:8]   # June–August subset
     """
-    nens  = sst.shape[0]
-    ntime = sst.shape[1]
-    nyear = ntime // 12
+    sst_dir = Path(sst_dir)
+    nyear   = len(years)
+    ntime   = nyear * 12
 
-    # Remove forced signal (ensemble mean)
-    sst_int = _remove_forced_signal(sst) if remove_forced else sst
+    # Chronological years_flat: [y0,y0,...x12, y1,y1,...x12, ...]
+    # np.tile(years,(12,1)) → (12,nyear); .transpose(1,0) → (nyear,12); .reshape → (ntime,)
+    years_flat = np.tile(years, (12, 1)).transpose(1, 0).reshape(ntime)
 
-    # Area mean over Niño3.4 box (5S–5N, 170W–120W = 190–240°E)
-    ts = _area_mean_ensemble(sst_int, lat, lon,
-                             latmin=-5, latmax=5, lonmin=190, lonmax=240)
+    nino34_monthly = []   # will accumulate (nens, nyears) per calendar month
 
-    # Monthly anomalies (per member, baseline climatology)
-    anoms = _monthly_anoms_ensemble(ts, years, baseline=baseline)
+    for m_label in MONTH_LABELS:
+        if verbose:
+            print(f'  Niño3.4: processing {m_label} ...', end='\r')
 
-    # 5-month running mean
-    anoms = uniform_filter1d(anoms, size=smooth_months, axis=1, mode='nearest')
+        # 1. Load all members for this calendar month
+        sst_m = _load_month_sst_all_members(sst_dir, m_label, member_groups)
+        # sst_m: (nens, nyears, nlat, nlon)
 
-    # Normalize by baseline standard deviation
-    nino34_flat = _normalize_by_baseline_std_ensemble(anoms, years, baseline=baseline)
+        # 2a. Remove forced signal
+        sst_int = _remove_forced_signal(sst_m) if remove_forced else sst_m
+
+        # 2b+c. Subset Niño3.4 box + cos(lat)-weighted area mean → (nens, nyears)
+        ts_m = _area_mean_ensemble(sst_int, lat, lon,
+                                   latmin=-5, latmax=5, lonmin=190, lonmax=240)
+
+        # 2d. Monthly anomaly: subtract baseline mean for this calendar month
+        anom_m = _monthly_anoms_ensemble(ts_m, years, baseline=baseline)
+
+        nino34_monthly.append(anom_m)   # (nens, nyears)
+
+    if verbose:
+        print('  Niño3.4: all months done.           ')
+
+    # 3. Stack → (12, nens, nyears)
+    nino34_stack = np.array(nino34_monthly)   # (12, nens, nyears)
+
+    # 4. Reshape to (nens, ntime) chronologically
+    #    transpose(1,2,0) → (nens, nyears, 12) → reshape → (nens, ntime)
+    #    time runs as: [Jan_y0, Feb_y0, ..., Dec_y0, Jan_y1, ..., Dec_yN]
+    nens             = nino34_stack.shape[1]
+    nino34_transpose = nino34_stack.transpose(1, 2, 0)          # (nens, nyears, 12)
+    nino34_flat      = nino34_transpose.reshape(nens, ntime)    # (nens, ntime)
+
+    # 5. 5-month running mean
+    nino34_flat = uniform_filter1d(nino34_flat, size=smooth_months,
+                                   axis=1, mode='nearest')
+
+    # 6. Normalize by baseline-period standard deviation
+    nino34_flat = _normalize_by_baseline_std_ensemble(nino34_flat,
+                                                      years_flat, baseline=baseline)
 
     # Phase labels
-    labels_flat = enso_phase_labels_ensemble(
-        nino34_flat, threshold=threshold, min_length=min_length
-    )
+    labels_flat = enso_phase_labels_ensemble(nino34_flat,
+                                             threshold=threshold,
+                                             min_length=min_length)
 
-    # Reshape to (nens, nyear, nmon=12)
+    # Reshape to (nens, nyear, 12) for convenience
     nino34 = nino34_flat.reshape(nens, nyear, 12)
     labels = labels_flat.reshape(nens, nyear, 12)
 
@@ -527,102 +492,154 @@ def compute_nino34_index(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def compute_enso_cp_tp_indices(
-    sst: np.ndarray,
+    sst_dir: str,
     lat: np.ndarray,
     lon: np.ndarray,
     years: np.ndarray,
     baseline: Tuple[int, int] = (1990, 2020),
     smooth_months: int = 5,
     threshold: float = 0.4,
-    remove_forced: bool = True
+    remove_forced: bool = True,
+    member_groups: List[str] = ['first50', 'last50'],
+    verbose: bool = True,
 ) -> dict:
     """
     Compute Niño3, Niño4, Niño3.4, cold-tongue (N_CT), and warm-pool (N_WP)
     indices for the CESM2-LE ensemble.
 
-    The CT/WP split follows Takahashi et al.:
-        N_CT = N3 - α*N4
-        N_WP = N4 - α*N3
-        α = 2/5 if N3*N4 > 0, else 0
+    CT/WP split (Takahashi et al.):
+        N_CT = N3 − α × N4
+        N_WP = N4 − α × N3
+        α = 2/5  if N3 × N4 > 0,  else 0
+    (α is computed from the raw area means before smoothing/normalization.)
+
+    Processing (per calendar month, in order):
+        1. Load monthly SST file → (nens, nyears, nlat, nlon)
+        2a. Remove forced signal (ensemble mean)
+        2b+c. Subset Niño box + cos(lat)-weighted area mean → (nens, nyears)
+              (done for N34, N3, N4 simultaneously)
+        2d. Monthly anomalies for each box time series
+       Append per-month result → list of 12 × (nens, nyears) for each box
+       Stack + reshape → (nens, ntime)  [chronological]
+       CT/WP split using raw N3/N4 flat time series
+       5-month running mean for all five indices
+       Normalize by baseline-period standard deviation
+       Phase labels
 
     Parameters
     ----------
-    sst : np.ndarray
-        SST data, shape (nens, ntime, nlat, nlon)
+    sst_dir : str or Path
+        Directory containing the monthly SST files.
     lat, lon : np.ndarray
-        1D coordinate arrays (lon in 0-360°E)
+        1D coordinate arrays (nlat,) and (nlon,), lon in 0–360°E.
+        2D TLAT/TLONG arrays from ``load_grid_latlon(grid_file)``.
+        Pass them directly:
+            lat, lon = load_grid_latlon(grid_file)
     years : np.ndarray
-        Year for each time step, shape (ntime,)
+        Annual year values, shape (nyears,), e.g. np.arange(1990, 2101).
     baseline : tuple, optional
-        Baseline period (default: 1990-2020)
+        Baseline period (default: 1990-2020).
     smooth_months : int, optional
-        Running mean window (default: 5)
+        Running mean window (default: 5).
     threshold : float, optional
-        Threshold for phase labeling (default: 0.4)
+        Threshold for phase labeling (default: 0.4).
     remove_forced : bool, optional
-        Whether to subtract the ensemble mean (default: True)
+        Subtract ensemble mean (default: True).
+    member_groups : list of str, optional
+        SST file group names (default: ['first50', 'last50']).
+    verbose : bool, optional
+        Print progress (default: True).
 
     Returns
     -------
-    dict with keys (reshaped arrays, shape (nens, nyear, nmon=12)):
+    dict with keys (reshaped arrays, shape (nens, nyear, 12)):
         'n34', 'n3', 'n4', 'n_ct', 'n_wp'
         'labels_n34', 'labels_n3', 'labels_n4', 'labels_n_ct', 'labels_n_wp'
-    And corresponding flat arrays (shape (nens, ntime)) with '_flat' suffix:
-        'n34_flat', 'n3_flat', ..., 'labels_n34_flat', ...
+    And flat arrays (shape (nens, ntime)) with '_flat' suffix.
 
     Examples
     --------
-    >>> result = compute_enso_cp_tp_indices(sst, lat, lon, years)
-    >>> nino_ct = result['n_ct']          # (nens, nyear, 12)
-    >>> labels  = result['labels_n_ct']
+    >>> lat, lon = load_grid_latlon(grid_file)   # 2D TLAT/TLONG
+    >>> years    = np.arange(1990, 2101)
+    >>> result   = compute_enso_cp_tp_indices(sst_dir, lat, lon, years)
+    >>> nino_ct  = result['n_ct']          # (nens, nyear, 12)
+    >>> labels   = result['labels_n_ct']
     """
-    nens  = sst.shape[0]
-    ntime = sst.shape[1]
-    nyear = ntime // 12
+    sst_dir = Path(sst_dir)
+    nyear   = len(years)
+    ntime   = nyear * 12
 
-    sst_int = _remove_forced_signal(sst) if remove_forced else sst
+    # Chronological years_flat: [y0,y0,...x12, y1,y1,...x12, ...]
+    years_flat = np.tile(years, (12, 1)).transpose(1, 0).reshape(ntime)
 
-    # Area means for three Niño boxes
-    n34_ts = _area_mean_ensemble(sst_int, lat, lon,
-                                 latmin=-5, latmax=5, lonmin=190, lonmax=240)
-    n3_ts  = _area_mean_ensemble(sst_int, lat, lon,
-                                 latmin=-5, latmax=5, lonmin=210, lonmax=270)
-    n4_ts  = _area_mean_ensemble(sst_int, lat, lon,
-                                 latmin=-5, latmax=5, lonmin=160, lonmax=210)
+    # Boxes: key → (latmin, latmax, lonmin, lonmax)
+    BOXES = {
+        'n34': dict(latmin=-5, latmax=5, lonmin=190, lonmax=240),
+        'n3':  dict(latmin=-5, latmax=5, lonmin=210, lonmax=270),
+        'n4':  dict(latmin=-5, latmax=5, lonmin=160, lonmax=210),
+    }
 
-    # Monthly anomalies
-    n34 = _monthly_anoms_ensemble(n34_ts, years, baseline=baseline)
-    n3  = _monthly_anoms_ensemble(n3_ts,  years, baseline=baseline)
-    n4  = _monthly_anoms_ensemble(n4_ts,  years, baseline=baseline)
+    monthly = {k: [] for k in BOXES}   # each: list of (nens, nyears)
 
-    # CT / WP split: α = 2/5 when N3 and N4 have the same sign
-    alpha = np.where(n3 * n4 > 0, 2.0 / 5.0, 0.0)
-    n_ct = n3 - alpha * n4
-    n_wp = n4 - alpha * n3
+    for m_label in MONTH_LABELS:
+        if verbose:
+            print(f'  ENSO CP/TP: processing {m_label} ...', end='\r')
 
-    # Smooth all five
-    n34, n3, n4, n_ct, n_wp = [
+        # 1. Load all members for this calendar month
+        sst_m = _load_month_sst_all_members(sst_dir, m_label, member_groups)
+        # sst_m: (nens, nyears, nlat, nlon)
+
+        # 2a. Remove forced signal
+        sst_int = _remove_forced_signal(sst_m) if remove_forced else sst_m
+
+        # 2b+c+d. Area mean + monthly anomaly for each Niño box
+        for key, box in BOXES.items():
+            ts_m   = _area_mean_ensemble(sst_int, lat, lon, **box)   # (nens, nyears)
+            anom_m = _monthly_anoms_ensemble(ts_m, years, baseline=baseline)
+            monthly[key].append(anom_m)                              # (nens, nyears)
+
+    if verbose:
+        print('  ENSO CP/TP: all months done.           ')
+
+    # 3. Stack → (12, nens, nyears) and reshape → (nens, ntime) for each box
+    nens = monthly['n34'][0].shape[0]
+    flat = {}
+    for key in BOXES:
+        arr       = np.array(monthly[key])                         # (12, nens, nyears)
+        flat[key] = arr.transpose(1, 2, 0).reshape(nens, ntime)   # (nens, ntime)
+
+    n34_flat = flat['n34']
+    n3_flat  = flat['n3']
+    n4_flat  = flat['n4']
+
+    # CT/WP split on the raw (pre-smooth) time series
+    alpha     = np.where(n3_flat * n4_flat > 0, 2.0 / 5.0, 0.0)
+    n_ct_flat = n3_flat - alpha * n4_flat
+    n_wp_flat = n4_flat - alpha * n3_flat
+
+    # 5-month running mean for all five indices
+    n34_flat, n3_flat, n4_flat, n_ct_flat, n_wp_flat = [
         uniform_filter1d(x, size=smooth_months, axis=1, mode='nearest')
-        for x in (n34, n3, n4, n_ct, n_wp)
+        for x in (n34_flat, n3_flat, n4_flat, n_ct_flat, n_wp_flat)
     ]
 
-    # Normalize by baseline std
-    n34, n3, n4, n_ct, n_wp = [
-        _normalize_by_baseline_std_ensemble(x, years, baseline=baseline)
-        for x in (n34, n3, n4, n_ct, n_wp)
+    # Normalize by baseline-period standard deviation
+    n34_flat, n3_flat, n4_flat, n_ct_flat, n_wp_flat = [
+        _normalize_by_baseline_std_ensemble(x, years_flat, baseline=baseline)
+        for x in (n34_flat, n3_flat, n4_flat, n_ct_flat, n_wp_flat)
     ]
 
-    # Phase labels (simple threshold, no min_length for CT/WP)
-    def _labels(x):
+    # Phase labels (no min_length for CT/WP)
+    def _lbl(x):
         return enso_phase_labels_ensemble(x, threshold=threshold, min_length=1)
 
     out = {}
-    for key, flat in [('n34', n34), ('n3', n3), ('n4', n4),
-                      ('n_ct', n_ct), ('n_wp', n_wp)]:
-        lbl = _labels(flat)
-        out[f'{key}_flat']        = flat
+    for key, arr_flat in [('n34', n34_flat), ('n3', n3_flat), ('n4', n4_flat),
+                           ('n_ct', n_ct_flat), ('n_wp', n_wp_flat)]:
+        lbl = _lbl(arr_flat)
+        out[f'{key}_flat']        = arr_flat
         out[f'labels_{key}_flat'] = lbl
-        out[key]                  = flat.reshape(nens, nyear, 12)
+        out[key]                  = arr_flat.reshape(nens, nyear, 12)
         out[f'labels_{key}']      = lbl.reshape(nens, nyear, 12)
 
     return out
@@ -633,13 +650,15 @@ def compute_enso_cp_tp_indices(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def compute_ipo_index(
-    sst: np.ndarray,
+    sst_dir: str,
     lat: np.ndarray,
     lon: np.ndarray,
     years: np.ndarray,
     baseline: Tuple[int, int] = (1990, 2020),
     filter_cutoff_years: float = 13.0,
-    remove_forced: bool = True
+    member_groups: List[str] = ['first50', 'last50'],
+    remove_forced: bool = True,
+    verbose: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray,
            np.ndarray, np.ndarray,
            np.ndarray, np.ndarray,
@@ -647,81 +666,126 @@ def compute_ipo_index(
     """
     Compute the Interdecadal Pacific Oscillation (IPO) index for CESM2-LE.
 
-    IPO = Tropical Pacific SSTa - 0.5 * (N.Pacific SSTa + S.Pacific SSTa)
+    IPO = Tropical Pacific SSTa − 0.5 × (N.Pacific SSTa + S.Pacific SSTa)
+    following Henley et al. (2015).
 
-    Regions (Henley et al. 2015):
-        Tropical:  10S–10N,  170E–90W  (170–270°E)
-        N.Pacific: 25N–45N,  140E–145W (140–215°E)
-        S.Pacific: 50S–15S,  150E–160W (150–200°E)
+    Regions:
+        Tropical:  10S–10N,   170E–90W  (170–270°E)
+        N.Pacific: 25N–45N,   140E–145W (140–215°E)
+        S.Pacific: 50S–15S,   150E–160W (150–200°E)
+
+    Processing (per calendar month, in order):
+        1. Load monthly SST file → (nens, nyears, nlat, nlon)
+        2. Remove forced signal (ensemble mean subtracted at each grid point)
+        3. Monthly anomalies: subtract baseline-period mean for that month
+        4. Cos(lat)-weighted area means for the three IPO boxes
+        5. IPO = trop − 0.5 × (npac + spac)  →  (nens, nyears)
+       Append per-month result → list of 12 × (nens, nyears)
+       Stack → (12, nens, nyears)
+       Transpose + reshape → (nens, ntime) chronologically
+       13-year Chebyshev low-pass filter
+       Phase labels (sign of filtered index)
 
     Parameters
     ----------
-    sst : np.ndarray
-        SST data, shape (nens, ntime, nlat, nlon)
+    sst_dir : str or Path
+        Directory containing the monthly SST files
+        (sst_cesmle_{group}members_mon_{MONTH}_199001-210012.nc).
     lat, lon : np.ndarray
-        1D coordinate arrays (lon in 0-360°E)
+        1D coordinate arrays (nlat,) and (nlon,), lon in 0–360°E.
+        2D TLAT/TLONG arrays from ``load_grid_latlon(grid_file)``.
+        Pass them directly:
+            lat, lon = load_grid_latlon(grid_file)
     years : np.ndarray
-        Year for each time step, shape (ntime,)
+        Annual year values, shape (nyears,), e.g. np.arange(1990, 2101).
     baseline : tuple, optional
-        Baseline period for monthly climatology removal (default: 1990-2020)
+        Baseline period for anomaly computation (default: 1990-2020).
     filter_cutoff_years : float, optional
-        Chebyshev filter cutoff in years (default: 13)
+        Chebyshev low-pass cutoff period in years (default: 13).
+    member_groups : list of str, optional
+        SST file group names to concatenate (default: ['first50', 'last50']).
     remove_forced : bool, optional
-        Whether to subtract the ensemble mean (default: True)
+        Subtract ensemble mean before computing (default: True).
+    verbose : bool, optional
+        Print progress for each calendar month (default: True).
 
     Returns
     -------
     ipo : np.ndarray
-        Unfiltered IPO index, shape (nens, nyear, nmon=12)
+        Unfiltered IPO index, shape (nens, nyear, 12)
     ipo_flat : np.ndarray
-        Unfiltered IPO index, shape (nens, ntime)
+        Unfiltered IPO index, shape (nens, ntime)  [chronological]
     ipo_filtered : np.ndarray
-        Low-pass filtered IPO index, shape (nens, nyear, nmon=12)
+        Low-pass filtered IPO index, shape (nens, nyear, 12)
     ipo_filtered_flat : np.ndarray
         Low-pass filtered IPO index, shape (nens, ntime)
     labels : np.ndarray
-        Phase labels for unfiltered IPO (+1, 0, -1), shape (nens, nyear, nmon=12)
+        Phase labels for unfiltered IPO (+1, 0, -1), shape (nens, nyear, 12)
     labels_flat : np.ndarray
         Phase labels for unfiltered IPO, shape (nens, ntime)
     labels_filtered : np.ndarray
-        Phase labels for filtered IPO (+1, 0, -1), shape (nens, nyear, nmon=12)
+        Phase labels for filtered IPO (+1, 0, -1), shape (nens, nyear, 12)
     labels_filtered_flat : np.ndarray
         Phase labels for filtered IPO, shape (nens, ntime)
 
     Examples
     --------
+    >>> lat, lon = load_grid_latlon(grid_file)   # 2D TLAT/TLONG
+    >>> years = np.arange(1990, 2101)
     >>> (ipo, ipo_f,
     ...  ipo_filt, ipo_filt_f,
     ...  lbl, lbl_f,
-    ...  lbl_filt, lbl_filt_f) = compute_ipo_index(sst, lat, lon, years)
+    ...  lbl_filt, lbl_filt_f) = compute_ipo_index(sst_dir, lat, lon, years)
     """
-    nens  = sst.shape[0]
-    ntime = sst.shape[1]
-    nyear = ntime // 12
+    sst_dir = Path(sst_dir)
+    nyear   = len(years)
+    ntime   = nyear * 12
 
-    sst_int = _remove_forced_signal(sst) if remove_forced else sst
+    # ── Loop over the 12 calendar months ─────────────────────────────────────
+    ipo_monthly = []   # will accumulate (nens, nyears) for each month
 
-    # Area-weighted box means
-    trop_ts = _area_mean_ensemble(sst_int, lat, lon, -10,  10,  170, 270)
-    npac_ts = _area_mean_ensemble(sst_int, lat, lon,  25,  45,  140, 215)
-    spac_ts = _area_mean_ensemble(sst_int, lat, lon, -50, -15,  150, 200)
+    for m_label in MONTH_LABELS:
+        if verbose:
+            print(f'  IPO: processing {m_label} ...', end='\r')
 
-    # Monthly anomalies per member (removes residual seasonal cycle)
-    trop = _monthly_anoms_ensemble(trop_ts, years, baseline=baseline)
-    npac = _monthly_anoms_ensemble(npac_ts, years, baseline=baseline)
-    spac = _monthly_anoms_ensemble(spac_ts, years, baseline=baseline)
+        # Step 1: load all members for this calendar month
+        sst_m = _load_month_sst_all_members(sst_dir, m_label, member_groups)
+        # sst_m: (nens, nyears, nlat, nlon)
 
-    # IPO = trop - 0.5*(N.Pac + S.Pac)
-    ipo_flat = trop - 0.5 * (npac + spac)   # (nens, ntime)
+        # Step 2: remove forced signal (ensemble mean at each grid point & year)
+        sst_int = _remove_forced_signal(sst_m) if remove_forced else sst_m
 
-    # 13-year Chebyshev low-pass filter per ensemble member (Henley et al. 2015)
+        # Step 3: monthly anomalies — subtract baseline mean for this month
+        sst_anom = _monthly_anoms_ensemble(sst_int, years, baseline=baseline)
+
+        # Step 4: cos(lat)-weighted area means for the three IPO boxes
+        trop = _area_mean_ensemble(sst_anom, lat, lon, -10,  10,  170, 270)
+        npac = _area_mean_ensemble(sst_anom, lat, lon,  25,  45,  140, 215)
+        spac = _area_mean_ensemble(sst_anom, lat, lon, -50, -15,  150, 200)
+
+        # Step 5: IPO for this calendar month → (nens, nyears)
+        ipo_monthly.append(trop - 0.5 * (npac + spac))
+
+    if verbose:
+        print('  IPO: all months done.           ')
+
+    # ── Reshape to chronological (nens, ntime) ───────────────────────────────
+    # Stack → (12, nens, nyears)
+    ipo_stack = np.array(ipo_monthly)   # (12, nens, nyears)
+
+    # transpose(1,2,0) → (nens, nyears, 12) → reshape → (nens, ntime)
+    # time runs as: [Jan_y0, Feb_y0, ..., Dec_y0, Jan_y1, ..., Dec_yN]
+    nens     = ipo_stack.shape[1]
+    ipo_flat = ipo_stack.transpose(1, 2, 0).reshape(nens, ntime)
+
+    # ── 13-year Chebyshev low-pass filter ────────────────────────────────────
     ipo_filtered_flat = chebyshev_lowpass(ipo_flat, cutoff_years=filter_cutoff_years)
 
-    # Phase labels (sign-based, consistent with Henley et al. 2015)
+    # ── Phase labels (sign-based, Henley et al. 2015) ────────────────────────
     labels_flat          = np.sign(ipo_flat).astype(int)
     labels_filtered_flat = np.sign(ipo_filtered_flat).astype(int)
 
-    # Reshape to (nens, nyear, nmon=12)
+    # ── Reshape back to (nens, nyear, 12) for convenience ───────────────────
     ipo             = ipo_flat.reshape(nens, nyear, 12)
     ipo_filtered    = ipo_filtered_flat.reshape(nens, nyear, 12)
     labels          = labels_flat.reshape(nens, nyear, 12)
@@ -898,45 +962,42 @@ if __name__ == '__main__':
         description='Compute CESM2-LE climate indices (Niño3.4, ENSO CP/TP, IPO)'
     )
     parser.add_argument('data_dir',   help='Directory containing monthly SST files')
+    parser.add_argument('grid_file',  help='Grid NetCDF file from 01_cesm2le_grid.py')
     parser.add_argument('output_dir', help='Directory for output NetCDF files')
-    parser.add_argument('--start-year', type=int, default=1850)
+    parser.add_argument('--start-year', type=int, default=1990)
     parser.add_argument('--end-year',   type=int, default=2100)
     parser.add_argument('--baseline',   type=int, nargs=2, default=[1990, 2020],
                         metavar=('BASELINE_START', 'BASELINE_END'))
     args = parser.parse_args()
 
-    baseline = tuple(args.baseline)
+    baseline   = tuple(args.baseline)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    years      = np.arange(args.start_year, args.end_year + 1)
 
-    print("Loading SST monthly files...")
-    sst, lat, lon, years = load_sst_monthly_files(
-        args.data_dir,
-        start_year=args.start_year,
-        end_year=args.end_year
-    )
-    print(f"  SST shape: {sst.shape}  (nens, ntime, nlat, nlon)")
-
-    unique_years = np.arange(args.start_year, args.end_year + 1)
+    # Load 2D TLAT/TLONG from the grid file (NOT from SST files)
+    print("Loading grid lat/lon...")
+    lat, lon = load_grid_latlon(args.grid_file)   # (nj, ni) each
+    print(f"  lat shape: {lat.shape}, lon shape: {lon.shape}")
 
     # --- Niño3.4 ---
     print("\nComputing Niño3.4 index...")
     nino34, nino34_flat, labels, labels_flat = compute_nino34_index(
-        sst, lat, lon, years, baseline=baseline
+        args.data_dir, lat, lon, years, baseline=baseline
     )
     nino34_jja = nino34[:, :, 5:8]    # June–July–August
     labels_jja = labels[:, :, 5:8]
     save_nino34(
-        nino34, labels, unique_years,
+        nino34, labels, years,
         str(output_dir / 'cesm2le_nino34_index_labels.nc'),
         nino34_jja=nino34_jja, labels_jja=labels_jja
     )
 
     # --- ENSO CP/TP ---
     print("\nComputing ENSO CP/TP indices...")
-    cp_tp = compute_enso_cp_tp_indices(sst, lat, lon, years, baseline=baseline)
+    cp_tp = compute_enso_cp_tp_indices(args.data_dir, lat, lon, years, baseline=baseline)
     save_enso_cp_tp(
-        cp_tp, unique_years,
+        cp_tp, years,
         str(output_dir / 'cesm2le_enso_cptp_indices.nc')
     )
 
@@ -945,9 +1006,10 @@ if __name__ == '__main__':
     (ipo, ipo_f,
      ipo_filt, ipo_filt_f,
      lbl, lbl_f,
-     lbl_filt, lbl_filt_f) = compute_ipo_index(sst, lat, lon, years, baseline=baseline)
+     lbl_filt, lbl_filt_f) = compute_ipo_index(args.data_dir, lat, lon, years,
+                                                baseline=baseline)
     save_ipo(
-        ipo, ipo_filt, lbl, lbl_filt, unique_years,
+        ipo, ipo_filt, lbl, lbl_filt, years,
         str(output_dir / 'cesm2le_ipo_index_labels.nc')
     )
 
