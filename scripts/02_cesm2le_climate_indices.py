@@ -58,6 +58,11 @@ def _sst_monthly_dir() -> Path:
     return paths.CESM2LE_SST_DIR / 'mon'
 
 
+def _grid_file() -> Path:
+    """Grid file produced by scripts/01_cesm2le_grid.py."""
+    return paths.CESM2LE_SST_DIR / 'grid' / 'cesm2le_sst_grid.nc'
+
+
 def _indices_dir() -> Path:
     """Output directory for climate index NetCDF files."""
     return paths.CESM2LE_DIR / 'climate_indices'
@@ -67,37 +72,37 @@ def _indices_dir() -> Path:
 # Index computation
 # ---------------------------------------------------------------------------
 
-def compute_nino34(sst, lat, lon, years, unique_years) -> None:
+def compute_nino34(sst_dir, lat, lon, years) -> None:
     """Compute Niño3.4 index and save."""
     print('\n[1/3] Computing Niño3.4 index ...')
-    nino34, _, labels, _ = compute_nino34_index(sst, lat, lon, years)
+    nino34, _, labels, _ = compute_nino34_index(sst_dir, lat, lon, years)
 
     nino34_jja = nino34[:, :, 5:8]
     labels_jja = labels[:, :, 5:8]
 
     output_file = str(_indices_dir() / 'cesm2le_nino34_index.nc')
-    save_nino34(nino34, labels, unique_years, output_file,
+    save_nino34(nino34, labels, years, output_file,
                 nino34_jja=nino34_jja, labels_jja=labels_jja)
 
 
-def compute_enso_cptp(sst, lat, lon, years, unique_years) -> None:
+def compute_enso_cptp(sst_dir, lat, lon, years) -> None:
     """Compute ENSO CP/TP indices and save."""
     print('\n[2/3] Computing ENSO CP/TP indices ...')
-    result = compute_enso_cp_tp_indices(sst, lat, lon, years)
+    result = compute_enso_cp_tp_indices(sst_dir, lat, lon, years)
 
     output_file = str(_indices_dir() / 'cesm2le_enso_cptp_indices.nc')
-    save_enso_cp_tp(result, unique_years, output_file)
+    save_enso_cp_tp(result, years, output_file)
 
 
-def compute_ipo(sst, lat, lon, years, unique_years) -> None:
+def compute_ipo(sst_dir, lat, lon, years) -> None:
     """Compute IPO index and save."""
     print('\n[3/3] Computing IPO index ...')
     ipo, _, ipo_filtered, _, labels, _, labels_filtered, _ = compute_ipo_index(
-        sst, lat, lon, years
+        sst_dir, lat, lon, years
     )
 
     output_file = str(_indices_dir() / 'cesm2le_ipo_index.nc')
-    save_ipo(ipo, ipo_filtered, labels, labels_filtered, unique_years, output_file)
+    save_ipo(ipo, ipo_filtered, labels, labels_filtered, years, output_file)
 
 
 # ---------------------------------------------------------------------------
@@ -137,37 +142,33 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     indices = args.index or ALL_INDICES
+    years   = np.arange(args.start_year, args.end_year + 1)
 
     print('\n' + '=' * 70)
     print('CESM2-LE Climate Indices')
     print('=' * 70)
     print(f'  Indices    : {indices}')
-    print(f'  Years      : {args.start_year}–{args.end_year}  (file range)')
+    print(f'  Years      : {args.start_year}–{args.end_year}')
     print(f'  SST dir    : {_sst_monthly_dir()}')
+    print(f'  Grid file  : {_grid_file()}')
     print(f'  Output dir : {_indices_dir()}')
-    print(f'  Data root  : {paths.DATA_ROOT}')
     print('=' * 70)
 
     _indices_dir().mkdir(parents=True, exist_ok=True)
 
-    # Load SST once — shared by all three indices
-    print('\nLoading CESM2-LE SST monthly files ...')
-    sst, lat, lon, years = load_sst_monthly_files(
-        data_dir=str(_sst_monthly_dir()),
-        start_year=args.start_year,
-        end_year=args.end_year,
-    )
-    unique_years = np.arange(args.start_year, args.end_year + 1)
-    print(f'  SST shape : {sst.shape}  (nens, ntime, nlat, nlon)')
+    # Load 2D lat/lon from the grid file (TLAT / TLONG)
+    print('\nLoading grid lat/lon ...')
+    lat, lon = load_grid_latlon(_grid_file())
+    print(f'  lat/lon shape : {lat.shape}')
 
     if 'nino34' in indices:
-        compute_nino34(sst, lat, lon, years, unique_years)
+        compute_nino34(_sst_monthly_dir(), lat, lon, years)
 
     if 'enso_cptp' in indices:
-        compute_enso_cptp(sst, lat, lon, years, unique_years)
+        compute_enso_cptp(_sst_monthly_dir(), lat, lon, years)
 
     if 'ipo' in indices:
-        compute_ipo(sst, lat, lon, years, unique_years)
+        compute_ipo(_sst_monthly_dir(), lat, lon, years)
 
     print('\n' + '=' * 70)
     print('Pipeline complete!')
