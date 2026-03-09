@@ -94,13 +94,13 @@ def _area_mean_ensemble(
     """
     lat_inds = np.where((lat >= latmin) & (lat <= latmax))[0]
     lon_inds = np.where((lon >= lonmin) & (lon <= lonmax))[0]
-    subset = sst[:, :, lat_inds][:, :, :, lon_inds]   # (nens, ntime, nlat_sub, nlon_sub)
+    subset = sst[:, :, lat_inds, :][:, :, :, lon_inds]   # (nens, ntime, nlat_sub, nlon_sub)
 
     wlat = np.cos(np.deg2rad(lat[lat_inds]))
     wlat = wlat / np.nansum(wlat)
 
-    lat_weighted = np.nansum(subset * wlat[None, None, :, None], axis=2)  # (nens, ntime, nlon_sub)
-    return np.nanmean(lat_weighted, axis=2)   # (nens, ntime)
+    lat_weighted = np.nanmean(subset * wlat[None, None, :, None], axis=(2,3))  # (nens, ntime, nlon_sub)
+    return lat_weighted   # (nens, ntime)
 
 
 def _monthly_anoms_ensemble(
@@ -114,7 +114,7 @@ def _monthly_anoms_ensemble(
     Parameters
     ----------
     ts : np.ndarray
-        Monthly timeseries, shape (nens, ntime)
+        Monthly timeseries, shape (nmonths, nens, ntime)
     years : np.ndarray
         Year for each time step, shape (ntime,). Assumes series starts in January.
     baseline : tuple, optional
@@ -123,23 +123,15 @@ def _monthly_anoms_ensemble(
     Returns
     -------
     np.ndarray
-        Anomalies, shape (nens, ntime)
+        Anomalies, shape (nmonths, nens, ntime)
     """
-    ntime = ts.shape[1]
-    months = np.arange(ntime) % 12   # 0-indexed month, assumes Jan start
+
     mask_base = (years >= baseline[0]) & (years <= baseline[1])
-
-    anoms = ts.copy()
-    for m in range(12):
-        sel = mask_base & (months == m)
-        if np.any(sel):
-            clim_m = np.nanmean(ts[:, sel], axis=1, keepdims=True)   # (nens, 1)
-            month_mask = months == m
-            anoms[:, month_mask] = ts[:, month_mask] - clim_m
-
+    clim_m = np.nanmean(ts[:,mask_base], axis=1, keepdims=True) 
+    anoms = ts - clim_m
     return anoms
 
-
+#TODO: edit this as it comes later in the code after smoothing 
 def _normalize_by_baseline_std_ensemble(
     x: np.ndarray,
     years: np.ndarray,
@@ -204,6 +196,7 @@ def chebyshev_lowpass(
     return filtfilt(b, a, ts, axis=-1)
 
 
+#TODO: double check this, enso is getting nans
 def enso_phase_labels_ensemble(
     index_arr: np.ndarray,
     threshold: float = 0.4,
@@ -274,6 +267,8 @@ def enso_phase_labels_ensemble(
 # Data loading
 # ─────────────────────────────────────────────────────────────────────────────
 
+
+#TODO: EDIT THIS TO USE MONTHLY FILES... might not even need this function
 def load_sst_monthly_files(
     data_dir: str,
     start_year: int = 1990,
