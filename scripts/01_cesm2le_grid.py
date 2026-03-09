@@ -8,7 +8,7 @@ NetCDF grid file.
 
 Usage
 -----
-    python save_sst_grid.py b.e21.BHISTcmip6.f09_g17.LE2-1001.001.cam.h0.SST.199001-199912.nc -o cesm2le_sst_grid.nc
+    python scripts/01_cesm2le_grid.py b.e21.BHISTcmip6.f09_g17.LE2-1001.001.cam.h0.SST.199001-199912.nc -o cesm2le_sst_grid.nc
 
 Author: Lauren Hoffman
 Email: lhoffma2@ucsc.edu
@@ -23,8 +23,8 @@ import sys
 # ---------------------------------------------------------------------------
 # Project root on sys.path so imports work regardless of working directory
 # ---------------------------------------------------------------------------
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+DATA_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(DATA_ROOT))
 
 from configs import paths
 
