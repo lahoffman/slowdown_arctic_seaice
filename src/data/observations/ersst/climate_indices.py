@@ -481,20 +481,13 @@ def compute_ipo_index(
         if np.any(sel):
             clim[m] = np.nanmean(sst_obs[sel], axis=0)
 
-    sst_anoms = sst_obs - clim[month_idx]
+    sst_anom = sst_obs - clim[month_idx]
+
 
     # Box means
-    def _box(latmin, latmax, lonmin, lonmax):
-        la = np.where((lat >= latmin) & (lat <= latmax))[0]
-        lo = np.where((lon >= lonmin) & (lon <= lonmax))[0]
-        subset = sst_anoms[:, la][:, :, lo]
-        w = np.cos(np.deg2rad(lat[la]))
-        w = w / w.sum()
-        return np.nanmean(np.nansum(subset * w[None, :, None], axis=1), axis=1)
-
-    trop = _box(-10, 10,  170, 270)   # Tropical Pacific
-    npac = _box( 25, 45,  140, 215)   # North Pacific
-    spac = _box(-50, -15, 150, 200)   # South Pacific
+    trop = _area_mean_monthly(sst_anom, lat, lon, -10,  10,  170, 270)
+    npac = _area_mean_monthly(sst_anom, lat, lon,  25,  45,  140, 215)
+    spac = _area_mean_monthly(sst_anom, lat, lon, -50, -15,  150, 200)
 
     ipo = trop - 0.5 * (npac + spac)
 
