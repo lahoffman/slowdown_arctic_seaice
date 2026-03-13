@@ -59,15 +59,18 @@ def _area_mean_monthly(
     np.ndarray
         Monthly area-mean timeseries, shape (ntime,)
     """
-    lat_inds = np.where((lat >= latmin) & (lat <= latmax))[0]
-    lon_inds = np.where((lon >= lonmin) & (lon <= lonmax))[0]
-    sst_subset = sst[:, lat_inds][:, :, lon_inds]
+    # 2D spatial mask for the box
+    mask = (lat >= latmin) & (lat <= latmax) & (lon >= lonmin) & (lon <= lonmax)
+    # (nlat, nlon) boolean
 
-    wlat = np.cos(np.deg2rad(lat[lat_inds]))
-    wlat = wlat / np.nansum(wlat)
+    # Cos(lat) weights — zero outside the box
+    wlat = np.where(mask, np.cos(np.deg2rad(lat)), 0.0)  # (nlat, nlon)
+    wsum = np.nansum(wlat)
 
-    lat_weighted = np.nansum(sst_subset * wlat[None, :, None], axis=1)
-    return np.nanmean(lat_weighted, axis=1)
+    # Weighted sum over spatial dims (axis 1 and 2), normalised by weight sum
+    # sst: (ntime, nlat, nlon); wlat: (nlat, nlon)
+    return np.nansum(sst * wlat[None, :, :], axis=(1, 2)) / wsum
+
 
 
 def _monthly_anoms(
@@ -121,7 +124,6 @@ def _normalize_by_baseline_std(
     mask = (years >= baseline[0]) & (years <= baseline[1])
     sigma = np.nanstd(x[mask])
     return x / sigma
-
 
 def enso_phase_labels(
     index_ts: np.ndarray,
@@ -186,6 +188,34 @@ def enso_phase_labels(
     return labels
 
 
+def load_grid_latlon(grid_file: str) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Load the 2D CESM2 ocean grid lat/lon from the grid file produced by
+    scripts/01_cesm2le_grid.py.
+
+    Parameters
+    ----------
+    grid_file : str or Path
+        Path to the grid NetCDF file (e.g.
+        ``paths.CESM2LE_SST_DIR / 'grid' / 'cesm2le_sst_grid.nc'``).
+
+    Returns
+    -------
+    lat : np.ndarray, shape (nj, ni)
+        Latitude in degrees North.
+    lon : np.ndarray, shape (nj, ni)
+        Longitude in 0–360°E.
+    """
+    grid_file = Path(grid_file)
+    ds = nc.Dataset(str(grid_file), 'r')
+    ds.set_auto_mask(False)
+
+    lat = np.array(ds.variables['lat'][:], dtype=np.float64)
+    lon = np.array(ds.variables['lon'][:], dtype=np.float64)
+
+    ds.close()
+    return lat, lon
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ENSO: Niño3.4 index
 # ─────────────────────────────────────────────────────────────────────────────
@@ -233,6 +263,7 @@ def compute_nino34_index(
     --------
     >>> nino34, labels = compute_nino34_index(sst_obs, lat, lon, years)
     """
+
     # Area mean over Niño3.4 box (5S-5N, 170W-120W = 190-240°E)
     ts = _area_mean_monthly(sst_obs, lat, lon,
                             latmin=-5, latmax=5, lonmin=190, lonmax=240)
