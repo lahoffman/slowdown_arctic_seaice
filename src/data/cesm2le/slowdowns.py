@@ -218,7 +218,7 @@ def compute_decadal_trends_ensemble(
     all_slopes_ens  = np.full((nens, n_windows), np.nan)
     all_slopes_mean = np.full(n_windows, np.nan)
 
-    sie_mean = np.nanmean(sie, axis=0)           # (nyear,)
+    sie_mean = np.nanmean(sie, axis=0)           # ensemble mean (nyear,)
 
     for j in range(n_windows):
         # --- Ensemble members (vectorised) ---
@@ -257,7 +257,7 @@ def compute_model_thresholds(
     fraction_riles: float
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Compute time-varying model slowdown and RILES thresholds.
+    Compute time-varying model slowdown thresholds.
 
     The threshold is scaled from the NSIDC observation-derived fraction by the
     CESM2-LE ensemble mean trend at each trend window. Because the ensemble mean

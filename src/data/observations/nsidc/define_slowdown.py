@@ -208,10 +208,13 @@ def save_slowdown_thresholds(
 
 def save_slowdown_events(
     mask: np.ndarray,
+    ice: np.darray,
+    yearmon: np.ndarray,
     linear_trends: np.ndarray,
     trend_years: np.ndarray,
     month_idx: int,
     output_file: str,
+    start_year: int = 1990,
 ) -> None:
     """
     Save the slowdown event mask and trend values for one calendar month.
@@ -231,16 +234,20 @@ def save_slowdown_events(
     """
     Path(output_file).parent.mkdir(parents=True, exist_ok=True)
 
+    start_idx = int(np.where(yearmon[0, :] == start_year)[0][0])
+    yearsice = yearmon[month_idx, start_idx:].astype(int)
     years  = trend_years[month_idx].astype(int)
     events = mask[month_idx].astype(int)
     trends = linear_trends[month_idx]
+    seaice = ice[month_idx,start_idx:] 
 
     ds = xr.Dataset(
         {
             "slowdown":      (("year",), events),
             "linear_trend":  (("year",), trends),
+            "seaice":        (("yearsice",), seaice),
         },
-        coords={"year": years},
+        coords={"year": years, "yearice": yearsice},
     )
     ds.attrs["description"] = (
         f"NSIDC SIE slowdown events — month {month_idx + 1} "
@@ -248,6 +255,7 @@ def save_slowdown_events(
     )
     ds["slowdown"].attrs["description"]     = "1 = slowdown event, 0 = normal"
     ds["linear_trend"].attrs["units"]       = "M km2 yr-1"
+    ds["seaice"].attrs["units"]            = "M km2"
 
     encoding = {v: {"zlib": True, "complevel": 4} for v in ds.data_vars}
     ds.to_netcdf(output_file, encoding=encoding)

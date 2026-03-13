@@ -140,6 +140,8 @@ def run_pipeline(variable: str, args) -> None:
     for m in range(12):
         save_slowdown_events(
             mask=mask,
+            ice=data,
+            yearmon = yearmon,
             linear_trends=trends,
             trend_years=trend_years,
             month_idx=m,

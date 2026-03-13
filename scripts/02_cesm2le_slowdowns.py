@@ -23,7 +23,7 @@ Outputs (one file per variable per month)
 Usage
 -----
     python scripts/02_cesm2le_slowdowns.py
-    python scripts/02_cesm2le_slowdowns.py --variable sie --months SEP
+    python scripts/02_cesm2le_slowdowns.py --variable sia --months SEP
     python scripts/02_cesm2le_slowdowns.py --variable sia --months JAN MAR SEP
 
 Author: Lauren Hoffman
