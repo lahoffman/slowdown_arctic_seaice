@@ -16,7 +16,6 @@ from .download import (
 
 from .regrid_to_cesm2le import (
     load_cesm2le_grid,
-    cesm2le_atm_grid,
     regrid_ersst_to_cesm2le,
     save_regridded_ersst,
     process_ersst_regrid
@@ -39,7 +38,6 @@ __all__ = [
     'load_ersst',
     # Regrid
     'load_cesm2le_grid',
-    'cesm2le_atm_grid',
     'regrid_ersst_to_cesm2le',
     'save_regridded_ersst',
     'process_ersst_regrid',

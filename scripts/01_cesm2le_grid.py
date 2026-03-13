@@ -123,8 +123,8 @@ def save_sst_grid(
         if "TLAT" in ds_sst and "TLONG" in ds_sst:
             lat_sst = ds_sst["TLAT"].values
             lon_sst = ds_sst["TLONG"].values
-            lat_name = "TLAT"
-            lon_name = "TLONG"
+            lat_name = "lat"
+            lon_name = "lon"
 
         elif "lat" in ds_sst and "lon" in ds_sst:
             if ds_sst["lat"].ndim == 1:
@@ -132,8 +132,8 @@ def save_sst_grid(
                     ds_sst["lon"].values,
                     ds_sst["lat"].values
                 )
-                lat_name = "TLAT"
-                lon_name = "TLONG"
+                lat_name = "lat"
+                lon_name = "lon"
             else:
                 lat_sst = ds_sst["lat"].values
                 lon_sst = ds_sst["lon"].values

@@ -28,9 +28,6 @@ def load_cesm2le_grid(grid_file: str) -> Tuple[np.ndarray, np.ndarray]:
     """
     Load lat/lon from a CESM2-LE file to use as regrid target.
 
-    Automatically detects atmospheric (cam.h0: regular 192×288 lat/lon)
-    vs ocean (pop.h: curvilinear 384×384 TLAT/TLONG) files.
-
     NOTE: Use an atmospheric cam.h0 file. The ocean pop.h grid is
     curvilinear (2D lat/lon) and 3x larger — RegularGridInterpolator
     requires a regular 1D target grid.
@@ -43,32 +40,20 @@ def load_cesm2le_grid(grid_file: str) -> Tuple[np.ndarray, np.ndarray]:
     Returns
     -------
     lat_cesm2 : np.ndarray
-        1D latitude array  (192 values for cam.h0)
+        2D latitude array  (192 x 288 values for cam.h0)
     lon_cesm2 : np.ndarray
-        1D longitude array (288 values for cam.h0, 0–358.75°E)
+        2D longitude array (192 x 288 values for cam.h0, 0–358.75°E)
     """
     dataset = nc.Dataset(grid_file, 'r')
-    available = list(dataset.variables.keys())
 
-    if 'lat' in available and 'lon' in available:
-        lat_cesm2 = np.array(dataset.variables['lat'])
-        lon_cesm2 = np.array(dataset.variables['lon'])
-        grid_type = 'atmospheric (cam.h0)'
-    elif 'TLAT' in available and 'TLONG' in available:
-        raise ValueError(
-            "Detected an ocean (pop.h) file with a curvilinear 384×384 grid.\n"
-            "Please provide an atmospheric cam.h0 file instead (192×288 regular grid).\n"
-            f"  File: {grid_file}"
-        )
-    else:
-        raise ValueError(
-            f"Cannot find lat/lon coordinates in file.\n"
-            f"Available variables: {available}"
-        )
+    lat_cesm2 = np.array(dataset.variables['lat'])
+    lon_cesm2 = np.array(dataset.variables['lon'])
+    grid_type = 'atmospheric (cam.h0)'
+
 
     dataset.close()
 
-    print(f"CESM2-LE grid ({grid_type}): {len(lat_cesm2)} lat × {len(lon_cesm2)} lon")
+    print(f"CESM2-LE grid ({grid_type}): {lat_cesm2.shape[0]} lat × {lon_cesm2.shape[1]} lon")
     return lat_cesm2, lon_cesm2
 
 
@@ -109,13 +94,12 @@ def regrid_ersst_to_cesm2le(
     >>> print(sst_regridded.shape)  # (ntime, 192, 288)
     """
     nt = sst.shape[0]
-    nlat_tgt = len(lat_tgt)
-    nlon_tgt = len(lon_tgt)
+    nlat_tgt = lat_tgt.shape[0]
+    nlon_tgt = lon_tgt.shape[1]
 
     # Build 2D target grid and flatten into (N, 2) point array
-    lon_tgt_grid, lat_tgt_grid = np.meshgrid(lon_tgt, lat_tgt)
     target_points = np.stack(
-        [lat_tgt_grid.ravel(), lon_tgt_grid.ravel()], axis=-1
+        [lat_tgt.ravel(), lon_tgt.ravel()], axis=-1
     )
 
     sst_regridded = np.empty((nt, nlat_tgt, nlon_tgt))
@@ -174,8 +158,8 @@ def save_regridded_ersst(
     ds = xr.Dataset(
         {
             "sst_obs": (("nte", "nx", "ny"), sst_regridded),
-            "lat_cesm2": (("nx",), lat_cesm2),
-            "lon_cesm2": (("ny",), lon_cesm2),
+            "lat_cesm2": (("nx","ny"), lat_cesm2),
+            "lon_cesm2": (("nx","ny"), lon_cesm2),
         },
         coords={
             "nte": np.arange(sst_regridded.shape[0]),
@@ -195,24 +179,6 @@ def save_regridded_ersst(
 
     print(f"✓ Saved regridded ERSSTv5 to: {output_file}")
     print(f"  Shape: {sst_regridded.shape} (ntime, nlat, nlon)")
-
-
-def cesm2le_atm_grid() -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Return the standard CESM2-LE atmospheric grid (192×288) without needing a file.
-
-    The f09_g17 atmospheric grid is fixed across all CESM2-LE experiments.
-
-    Returns
-    -------
-    lat : np.ndarray  shape (192,), from -90 to +90
-    lon : np.ndarray  shape (288,), from 0 to 358.75°E
-    """
-    lat = np.linspace(-90, 90, 192)
-    lon = np.linspace(0, 358.75, 288)
-    print(f"Using standard CESM2-LE atmospheric grid: {len(lat)} lat × {len(lon)} lon")
-    return lat, lon
-
 
 def process_ersst_regrid(
     ersst_file: str,
@@ -261,7 +227,7 @@ def process_ersst_regrid(
     if cesm2le_grid_file is not None:
         lat_tgt, lon_tgt = load_cesm2le_grid(cesm2le_grid_file)
     else:
-        lat_tgt, lon_tgt = cesm2le_atm_grid()
+        print("WARNING: No CESM2-LE grid file provided.")
 
     # Regrid
     print("\nStep 3: Regridding...")

@@ -83,7 +83,7 @@ def _area_mean_ensemble(
     sst : np.ndarray
         SST data, shape (nens, ntime_or_nyears, nlat, nlon)
     lat, lon : np.ndarray
-        2D coordinate arrays (nlat, nlon) — TLAT/TLONG from ``load_grid_latlon``.
+        2D coordinate arrays (nlat, nlon) — lat/lon from ``load_grid_latlon``.
         Longitude must be in 0–360°E.
     latmin, latmax, lonmin, lonmax : float
         Box bounds (lon in 0–360°E)
@@ -300,8 +300,8 @@ def load_grid_latlon(grid_file: str) -> Tuple[np.ndarray, np.ndarray]:
     ds = nc.Dataset(str(grid_file), 'r')
     ds.set_auto_mask(False)
 
-    lat = np.array(ds.variables['TLAT'][:], dtype=np.float64)
-    lon = np.array(ds.variables['TLONG'][:], dtype=np.float64)
+    lat = np.array(ds.variables['lat'][:], dtype=np.float64)
+    lon = np.array(ds.variables['lon'][:], dtype=np.float64)
 
     ds.close()
     return lat, lon
@@ -532,7 +532,7 @@ def compute_enso_cp_tp_indices(
         Directory containing the monthly SST files.
     lat, lon : np.ndarray
         1D coordinate arrays (nlat,) and (nlon,), lon in 0–360°E.
-        2D TLAT/TLONG arrays from ``load_grid_latlon(grid_file)``.
+        2D lat/lon arrays from ``load_grid_latlon(grid_file)``.
         Pass them directly:
             lat, lon = load_grid_latlon(grid_file)
     years : np.ndarray
@@ -559,7 +559,7 @@ def compute_enso_cp_tp_indices(
 
     Examples
     --------
-    >>> lat, lon = load_grid_latlon(grid_file)   # 2D TLAT/TLONG
+    >>> lat, lon = load_grid_latlon(grid_file)   # 2D lat/lon
     >>> years    = np.arange(1990, 2101)
     >>> result   = compute_enso_cp_tp_indices(sst_dir, lat, lon, years)
     >>> nino_ct  = result['n_ct']          # (nens, nyear, 12)
@@ -693,7 +693,7 @@ def compute_ipo_index(
         (sst_cesmle_{group}members_mon_{MONTH}_199001-210012.nc).
     lat, lon : np.ndarray
         1D coordinate arrays (nlat,) and (nlon,), lon in 0–360°E.
-        2D TLAT/TLONG arrays from ``load_grid_latlon(grid_file)``.
+        2D lat/lon arrays from ``load_grid_latlon(grid_file)``.
         Pass them directly:
             lat, lon = load_grid_latlon(grid_file)
     years : np.ndarray
@@ -730,7 +730,7 @@ def compute_ipo_index(
 
     Examples
     --------
-    >>> lat, lon = load_grid_latlon(grid_file)   # 2D TLAT/TLONG
+    >>> lat, lon = load_grid_latlon(grid_file)   # 2D lat/lon
     >>> years = np.arange(1990, 2101)
     >>> (ipo, ipo_f,
     ...  ipo_filt, ipo_filt_f,
@@ -975,7 +975,7 @@ if __name__ == '__main__':
     output_dir.mkdir(parents=True, exist_ok=True)
     years      = np.arange(args.start_year, args.end_year + 1)
 
-    # Load 2D TLAT/TLONG from the grid file (NOT from SST files)
+    # Load 2D lat/lon from the grid file (NOT from SST files)
     print("Loading grid lat/lon...")
     lat, lon = load_grid_latlon(args.grid_file)   # (nj, ni) each
     print(f"  lat shape: {lat.shape}, lon shape: {lon.shape}")
