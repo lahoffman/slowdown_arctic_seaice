@@ -120,7 +120,7 @@ CESM2LE_SST_DIR.mkdir(parents=True, exist_ok=True)
 
 # grid / ancillary  (used for regridding)
 CESM2LE_GRID_FILE = CESM2LE_RAW_DIR / 'b.e21.BHISTcmip6.f09_g17.LE2-1001.001.cam.h0.TREFHT.199001-199912.nc'
-LANDMASK_FILE     = CESM2LE_DIR / 'sst' / 'grid' / 'cnn_cesm2le_landmask.nc'
+LANDMASK_FILE     = CESM2LE_DIR / 'sst' / 'grid' / 'cesm2le_landmask.nc'
 
 # processed SST monthly (template — {month} filled at runtime)
 #***EDIT THIS

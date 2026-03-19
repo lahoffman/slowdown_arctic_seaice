@@ -9,7 +9,7 @@ The mask is:  0 = ocean,  1 = land.
 
 Output
 ------
-    DATA_ROOT/cesm2le/cnn_cesm2le_landmask.nc
+    DATA_ROOT/cesm2le/cesm2le_landmask.nc
 
 Usage
 -----
