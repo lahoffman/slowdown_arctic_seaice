@@ -132,6 +132,30 @@ CESM2LE_SST_MONTHLY = {
 # SIE trend data (output of CESM2-LE processing pipeline)
 CESM2LE_SIE_TRENDS = CESM2LE_DIR / 'sie_cesmle_linear_decadal_trend_monthly_1990-2100.nc'
 
+# Slowdown / RILES classification (output of scripts/02_cesm2le_slowdowns.py)
+CESM2LE_SLOWDOWNS_DIR = CESM2LE_DIR / 'slowdowns'
+CESM2LE_SLOWDOWNS_DIR.mkdir(parents=True, exist_ok=True)
+
+def cesm2le_slowdown_file(variable: str = 'sie', month: str = 'SEP',
+                           start_year: int = 1990, end_year: int = 2100) -> Path:
+    """Path to the slowdown classification NetCDF for one variable and month.
+
+    The file is produced by scripts/02_cesm2le_slowdowns.py and contains the
+    binary slowdown mask (nens × nyr) plus ensemble-mean trends and thresholds.
+
+    Parameters
+    ----------
+    variable : str
+        ``'sie'`` (sea ice extent, default) or ``'sia'`` (sea ice area).
+    month : str
+        Three-letter calendar month, e.g. ``'SEP'``.
+    start_year, end_year : int
+        Year range encoded in the filename (default: 1990–2100).
+    """
+    return CESM2LE_SLOWDOWNS_DIR / (
+        f'cesm2le_{variable}_slowdown_riles_{month}_{start_year}-{end_year}.nc'
+    )
+
 
 # =============================================================================
 # RESULTS  —  models, XAI, figures
@@ -144,6 +168,38 @@ MODELS_DIR       = RESULTS_DIR / 'models'
 ATTRIBUTIONS_DIR = RESULTS_DIR / 'attributions'
 FIGURES_DIR      = RESULTS_DIR / 'figures'
 LOGS_DIR         = RESULTS_DIR / 'logs'
+TVT_SPLITS_DIR   = RESULTS_DIR / 'tvt_splits'
 
-for _d in (MODELS_DIR, ATTRIBUTIONS_DIR, FIGURES_DIR, LOGS_DIR):
+for _d in (MODELS_DIR, ATTRIBUTIONS_DIR, FIGURES_DIR, LOGS_DIR, TVT_SPLITS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
+
+
+def tvt_split_path(split_idx: int) -> Path:
+    """Path to the saved TVT split NetCDF for a given split index (0–8).
+
+    The file is produced by scripts/03_cesm2le_tvt_and_train.py via
+    src.cnn.splits.save_tvt_split and contains standardised JJA SST arrays
+    and binary slowdown labels for the train, validation, and test partitions,
+    plus the normalisation statistics (mu_train, sigma_train).
+
+    Parameters
+    ----------
+    split_idx : int
+        Zero-based TVT split index (0–8).
+    """
+    return TVT_SPLITS_DIR / f'cesm2le_sst_jja_slowdown_split{split_idx}.nc'
+
+
+def model_path(split_idx: int, run_idx: int) -> Path:
+    """Path to a saved CNN model (HDF5) for a given split and seed index."""
+    return MODELS_DIR / f'cnn_jja_split{split_idx}_run{run_idx}.h5'
+
+
+def attribution_path(split_idx: int, run_idx: int) -> Path:
+    """Path to a saved LRP attribution NetCDF for a given split and seed index."""
+    return ATTRIBUTIONS_DIR / f'lrp_jja_split{split_idx}_run{run_idx}.nc'
+
+
+def metrics_path(split_idx: int) -> Path:
+    """Path to a saved metrics Dataset NetCDF for a given split."""
+    return RESULTS_DIR / 'metrics' / f'cnn_jja_metrics_split{split_idx}.nc'
