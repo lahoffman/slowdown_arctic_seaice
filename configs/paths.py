@@ -123,10 +123,9 @@ CESM2LE_GRID_FILE = CESM2LE_RAW_DIR / 'b.e21.BHISTcmip6.f09_g17.LE2-1001.001.cam
 LANDMASK_FILE     = CESM2LE_DIR / 'sst' / 'grid' / 'cesm2le_landmask.nc'
 
 # processed SST monthly (template — {month} filled at runtime)
-#***EDIT THIS
 CESM2LE_SST_MONTHLY = {
-    'cmip6': str(CESM2LE_SST_DIR / 'sst_cesmle_cmip6members_mon_{month}_199001-210012.nc'),
-    'smbb':  str(CESM2LE_SST_DIR / 'sst_cesmle_smbbmembers_mon_{month}_199001-210012.nc'),
+    'first50': str(CESM2LE_SST_DIR / 'mon' / 'sst_cesmle_first50members_mon_{month}_199001-210012.nc'),
+    'last50':  str(CESM2LE_SST_DIR / 'mon' / 'sst_cesmle_last50members_mon_{month}_199001-210012.nc'),
 }
 
 # SIE trend data (output of CESM2-LE processing pipeline)
