@@ -10,45 +10,8 @@ train   : Seed setting, class-weight computation, training loop, prediction,
           and metrics collection across splits.
 """
 
-from .splits import (
-    load_jja_sst_demeaned,
-    block_tvt_split,
-    standardize,
-    apply_landmask,
-    save_tvt_split,
-    load_tvt_split,
-)
-
-from .model import (
-    build_cnn,
-    focal_loss,
-    compute_metrics,
-)
-
-from .train import (
-    set_seed,
-    compute_class_weights,
-    train_model,
-    predict_splits,
-    collect_metrics_dataset,
-)
-
-__all__ = [
-    # splits
-    "load_jja_sst_demeaned",
-    "block_tvt_split",
-    "standardize",
-    "apply_landmask",
-    "save_tvt_split",
-    "load_tvt_split",
-    # model
-    "build_cnn",
-    "focal_loss",
-    "compute_metrics",
-    # train
-    "set_seed",
-    "compute_class_weights",
-    "train_model",
-    "predict_splits",
-    "collect_metrics_dataset",
-]
+# Submodules are imported directly in each script to avoid pulling in
+# heavy optional dependencies (sklearn, tensorflow, etc.) unnecessarily.
+#   from src.cnn.splits import ...
+#   from src.cnn.model  import ...
+#   from src.cnn.train  import ...
