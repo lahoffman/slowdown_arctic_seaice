@@ -54,7 +54,7 @@ print(f"Using: {fpath}")
 # =============================================================================
 
 with nc.Dataset(fpath, 'r') as ds:
-    sst_raw = ds.variables['SST'][0, 0, :, :]          # one member, one time step
+    sst_raw = ds.variables['SST'][0, :, :]          # one time step
 
 # Handle both masked arrays and plain NaN
 sst = np.ma.filled(np.ma.array(sst_raw), fill_value=np.nan)
