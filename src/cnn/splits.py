@@ -90,9 +90,9 @@ def load_jja_sst_demeaned(
 
     jja_months = ['JUN', 'JUL', 'AUG']
 
-    # Build full year array from file start year
+    # file_years is in YYYYMM-YYYYMM format, e.g. '199001-210012'
     file_start_year = int(file_years[:4])
-    file_end_year   = int(file_years[5:9])
+    file_end_year   = int(file_years[7:11])
     all_years       = np.arange(file_start_year, file_end_year + 1)
 
     # Year slice indices within the full file
