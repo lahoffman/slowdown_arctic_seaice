@@ -56,7 +56,8 @@ setup(
         "cartopy>=0.20.0",
         "cmocean>=2.0",
         "scikit-learn>=1.0.0",
-        "tensorflow>=2.10.0",
+        "tensorflow>=2.6.0,<2.15.0",
+        "innvestigate>=2.0.0",
     ],
     extras_require={
         "dev": [
