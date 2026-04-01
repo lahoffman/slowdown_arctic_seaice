@@ -114,8 +114,10 @@ CESM2LE_RAW_DIR.mkdir(parents=True, exist_ok=True)
 # processed  (outputs of src/data/cesm2le/combine.py)
 CESM2LE_AICE_DIR = CESM2LE_DIR / 'aice'
 CESM2LE_SST_DIR  = CESM2LE_DIR / 'sst'
+CESM2LE_TREF_DIR = CESM2LE_DIR / 'tref'
 CESM2LE_AICE_DIR.mkdir(parents=True, exist_ok=True)
 CESM2LE_SST_DIR.mkdir(parents=True, exist_ok=True)
+CESM2LE_TREF_DIR.mkdir(parents=True, exist_ok=True) 
 
 
 # grid / ancillary  (used for regridding)

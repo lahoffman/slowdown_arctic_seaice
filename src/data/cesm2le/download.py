@@ -55,10 +55,10 @@ VARIABLE_CONFIG = {
         'url_path': 'ice/proc/tseries/month_1/aice',
         'var_name': 'aice'
     },
-    'TS': {
+    'TREFHT': {
         'component': 'cam.h0',
-        'url_path': 'atm/proc/tseries/month_1/TS',
-        'var_name': 'TS'
+        'url_path': 'atm/proc/tseries/month_1/TREFHT',
+        'var_name': 'TREFHT'
     },
     'PRECT': {
         'component': 'cam.h0',

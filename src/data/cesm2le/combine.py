@@ -398,6 +398,39 @@ def process_cesmle_variable(
     print(f"{'='*60}\n")
 
 
+def calculate_annual_mean(
+    data: np.ndarray,
+    lat: np.ndarray,
+) -> np.ndarray:
+    """
+    Compute the globally-averaged annual mean from ensemble data.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Shape ``[nens, nmonths, nlat, nlon, nyears]``.
+    lat : np.ndarray
+        2-D latitude array ``(nlat, nlon)`` for cos(lat) weighting.
+
+    Returns
+    -------
+    np.ndarray
+        Shape ``[nens, nyears]``.
+    """
+    if data.ndim != 5:
+        raise ValueError(
+            f"Expected 5-D array [nens, nmonths, nlat, nlon, nyears], got {data.shape}"
+        )
+
+    weights = np.cos(np.deg2rad(lat))
+    weights = weights / np.nansum(weights)
+
+    w = weights[np.newaxis, np.newaxis, :, :, np.newaxis]
+    spatial_mean = np.nansum(data * w, axis=(2, 3))  # (nens, nmonths, nyears)
+
+    return np.nanmean(spatial_mean, axis=1)  # (nens, nyears)
+
+
 if __name__ == '__main__':
     # Example usage
     print("CESM2-LE Data Processing Module")
@@ -405,3 +438,4 @@ if __name__ == '__main__':
     print("  - combine_ensemble_members(): Combine raw data chunks")
     print("  - separate_by_month(): Separate combined data by month")
     print("  - process_cesmle_variable(): Complete pipeline")
+    print("  - calculate_annual_mean(): Spatially-weighted annual mean")

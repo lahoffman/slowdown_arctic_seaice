@@ -58,6 +58,7 @@ from src.data.cesm2le import (
     combine_ensemble_members,
     separate_by_month,
     process_cesmle_variable,
+    calculate_annual_mean,
 )
 from src.data.cesm2le.metrics import batch_process_monthly_files
 
@@ -101,6 +102,21 @@ def _aice_monthly_dir() -> Path:
 def _metrics_dir() -> Path:
     """Output directory for SIE / SIA NetCDF files."""
     return paths.CESM2LE_AICE_DIR / 'metrics'
+
+def _tref_raw_dir() -> Path:
+    """Raw TREF chunks download directory."""
+    return paths.CESM2LE_TREF_DIR / 'raw'
+
+
+def _tref_combined_path(group: str) -> Path:
+    """Combined (all-time) TREF file for a given member group."""
+    return paths.CESM2LE_TREF_DIR / 'yearmon' / \
+        f'tref_cesmle_{group}members_mon_199001-210012.nc'
+
+
+def _gmt_yearly_dir() -> Path:
+    """Directory for per-year GMT files."""
+    return paths.CESM2LE_TREF_DIR / 'gmt'
 
 
 # ---------------------------------------------------------------------------
@@ -290,19 +306,78 @@ def compute_sea_ice_metrics(member_groups: list) -> None:
 
 
 # ---------------------------------------------------------------------------
+# TREF processing
+# ---------------------------------------------------------------------------
+
+def download_tref(member_groups: list, dry_run: bool = False) -> None:
+    """Download raw TREF chunks from UCAR for the requested member groups."""
+    print('\n' + '=' * 70)
+    print('STEP 1a  —  Download raw TREF data from UCAR')
+    print('=' * 70)
+
+    raw_dir = _tref_raw_dir()
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    download_raw_data(
+        variable='TREFHT',
+        output_dir=str(raw_dir),
+        member_groups=member_groups,
+        dry_run=dry_run,
+    )
+
+    print(f'\n✓ TREF raw data {"(dry run)" if dry_run else "downloaded"} → {raw_dir}')
+
+
+def process_tref(member_groups: list) -> None:
+    """Combine raw TREF chunks and separate into monthly files."""
+    print('\n' + '=' * 70)
+    print('STEP 1b  —  Process TREF (combine + separate by month)')
+    print('=' * 70)
+
+    raw_dir = _tref_raw_dir()
+    yearly_dir = _gmt_yearly_dir()
+
+    for group in member_groups:
+        print(f'\n--- {group} members ---')
+        combined_path = _tref_combined_path(group)
+        combined_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Step 1: combine all raw chunks for this member group
+        print(f'Combining raw chunks → {combined_path.name}')
+        combine_ensemble_members(
+            variable='TREFHT',
+            raw_data_path=str(raw_dir),
+            output_path=str(combined_path),
+            member_group=group,
+            # component='cam', frequency='h0'  (these are the defaults)
+        )
+
+        # Step 2: take weighted spatial mean and annual mean to get GMT time series
+        print(f'Calculating annual mean GMT → {yearly_dir}/')
+        yearly_dir.mkdir(parents=True, exist_ok=True)
+        calculate_annual_mean(
+            combined_file=str(combined_path),
+            output_dir=str(yearly_dir),
+            variable='TREFHT',
+            member_label=f'{group}members',
+        )
+
+    print('\n✓ TREF processing complete')
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description='Download and preprocess CESM2-LE data (SST and/or AICE).',
+        description='Download and preprocess CESM2-LE data (SST, TREFHT, and/or AICE).',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
 
     parser.add_argument(
         '--variable', '-v',
-        choices=['sst', 'aice', 'all'],
+        choices=['tref','sst', 'aice', 'all'],
         default='all',
         help='Which variable(s) to process (default: all).',
     )
@@ -349,6 +424,7 @@ def main() -> None:
 
     run_sst  = args.variable in ('sst',  'all')
     run_aice = args.variable in ('aice', 'all')
+    run_tref = args.variable in ('tref', 'all')
 
     print('\n' + '=' * 70)
     print('CESM2-LE Preprocessing Pipeline')
@@ -384,6 +460,16 @@ def main() -> None:
 
         if not args.dry_run:
             compute_sea_ice_metrics(member_groups=args.member_groups)
+
+    # ------------------------------------------------------------------
+    # TREF
+    # ------------------------------------------------------------------
+    if run_tref and not args.metrics_only:
+        if not args.skip_download:
+            download_tref(member_groups=args.member_groups, dry_run=args.dry_run)
+
+        if not args.dry_run:
+            process_tref(member_groups=args.member_groups)
 
     print('\n' + '=' * 70)
     print('Pipeline complete!')
