@@ -55,6 +55,7 @@ setup(
         "matplotlib>=3.4.0",
         "cartopy>=0.20.0",
         "cmocean>=2.0",
+        "scikit-learn>=1.0.0",
     ],
     extras_require={
         "dev": [
