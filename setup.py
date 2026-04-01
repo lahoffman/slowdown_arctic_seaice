@@ -56,6 +56,7 @@ setup(
         "cartopy>=0.20.0",
         "cmocean>=2.0",
         "scikit-learn>=1.0.0",
+        "tensorflow>=2.10.0",
     ],
     extras_require={
         "dev": [
