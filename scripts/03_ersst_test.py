@@ -16,13 +16,6 @@ Output
 ------
     DATA_ROOT/ersst/ersstv5_testing.nc
 
-NOTE: The requested output path ended in ``.py``, which is inconsistent with
-the repo convention of saving data as NetCDF (``.nc``).  All other pipeline
-outputs in this project (TVT splits, climate indices, slowdown events) are
-stored as NetCDF.  This script therefore writes a ``.nc`` file.  If a ``.py``
-extension was truly intended (e.g., for a pickled Python object), change
-``OUTPUT_EXT`` below.
-
 Usage
 -----
     python scripts/03_ersst_test.py

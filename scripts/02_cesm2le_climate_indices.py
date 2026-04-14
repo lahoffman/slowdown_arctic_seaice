@@ -46,10 +46,12 @@ from src.data.cesm2le.climate_indices import (
     compute_enso_cp_tp_indices,
     compute_ipo_index,
     compute_arctic_sst_index,
+    compute_arctic_sst_forced_em,
     save_nino34,
     save_enso_cp_tp,
     save_ipo,
     save_arctic_sst,
+    save_arctic_sst_forced_em,
 )
 
 ALL_INDICES = ['nino34', 'enso_cptp', 'ipo', 'arctic_sst']
@@ -76,7 +78,7 @@ def _indices_dir() -> Path:
 
 def compute_nino34(sst_dir, lat, lon, years) -> None:
     """Compute Niño3.4 index and save."""
-    print('\n[1/3] Computing Niño3.4 index ...')
+    print('\n[1/5] Computing Niño3.4 index ...')
     nino34, _, labels, _ = compute_nino34_index(sst_dir, lat, lon, years)
 
     nino34_jja = nino34[:, :, 5:8]
@@ -89,7 +91,7 @@ def compute_nino34(sst_dir, lat, lon, years) -> None:
 
 def compute_enso_cptp(sst_dir, lat, lon, years) -> None:
     """Compute ENSO CP/TP indices and save."""
-    print('\n[2/3] Computing ENSO CP/TP indices ...')
+    print('\n[2/5] Computing ENSO CP/TP indices ...')
     result = compute_enso_cp_tp_indices(sst_dir, lat, lon, years)
 
     output_file = str(_indices_dir() / 'cesm2le_enso_cptp_indices.nc')
@@ -98,7 +100,7 @@ def compute_enso_cptp(sst_dir, lat, lon, years) -> None:
 
 def compute_ipo(sst_dir, lat, lon, years) -> None:
     """Compute IPO index and save."""
-    print('\n[3/4] Computing IPO index ...')
+    print('\n[3/5] Computing IPO index ...')
     ipo, _, ipo_filtered, _, labels, _, labels_filtered, _ = compute_ipo_index(
         sst_dir, lat, lon, years
     )
@@ -109,7 +111,7 @@ def compute_ipo(sst_dir, lat, lon, years) -> None:
 
 def compute_arctic(sst_dir, lat, lon, years) -> None:
     """Compute Arctic SST index and save."""
-    print('\n[4/4] Computing Arctic SST index ...')
+    print('\n[4/5] Computing Arctic SST index ...')
     arctic_sst, _, labels, _ = compute_arctic_sst_index(sst_dir, lat, lon, years)
 
     arctic_sst_jja = arctic_sst[:, :, 5:8]
@@ -119,6 +121,16 @@ def compute_arctic(sst_dir, lat, lon, years) -> None:
     save_arctic_sst(arctic_sst, labels, years, output_file,
                     arctic_sst_jja=arctic_sst_jja, labels_jja=labels_jja)
 
+def compute_arctic_forced_em(sst_dir, lat, lon, years) -> None:
+    """Compute CESM2 Arctic SST forced ensemble mean and save."""
+    print('\n[5/5] Computing Arctic SST forced ensemble mean ...')
+
+    arctic_sst_forced_em_flat = compute_arctic_sst_forced_em(
+        sst_dir, lat, lon, years
+    )
+
+    output_file = str(_indices_dir() / 'cesm2le_arctic_sst_forced_em.nc')
+    save_arctic_sst_forced_em(arctic_sst_forced_em_flat, years, output_file)
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -186,6 +198,7 @@ def main() -> None:
         compute_ipo(_sst_monthly_dir(), lat, lon, years)
 
     if 'arctic_sst' in indices:
+        compute_arctic_forced_em(_sst_monthly_dir(), lat, lon, years)
         compute_arctic(_sst_monthly_dir(), lat, lon, years)
 
     print('\n' + '=' * 70)

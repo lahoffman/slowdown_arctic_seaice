@@ -62,6 +62,9 @@ def _indices_dir() -> Path:
     """Output directory for climate index NetCDF files."""
     return paths.ERSST_DIR 
 
+def _cesm_forced_dir() -> Path:
+    """Directory containing CESM2-LE forced ensemble mean indices."""
+    return paths.CESM2LE_DIR / 'climate_indices' / 'cesm2le_arctic_sst_forced_em.nc'
 
 # ---------------------------------------------------------------------------
 # Index computation
@@ -99,7 +102,7 @@ def compute_ipo(sst_dir, lat, lon, years) -> None:
 def compute_arctic(sst_dir, lat, lon, years) -> None:
     """Compute Arctic SST index and save."""
     print('\n[4/4] Computing Arctic SST index ...')
-    arctic_sst, labels = compute_arctic_sst_index(sst_dir, lat, lon, years)
+    arctic_sst, labels = compute_arctic_sst_index(sst_dir, _cesm_forced_dir(), lat, lon, years)
 
     output_file = str(_indices_dir() / 'ersstv5_arctic_sst_index.nc')
     save_arctic_sst(arctic_sst, labels, years, output_file)

@@ -47,12 +47,14 @@ from .climate_indices import (
     compute_enso_cp_tp_indices,
     compute_ipo_index,
     compute_arctic_sst_index,
+    compute_arctic_sst_forced_em,
     chebyshev_lowpass,
     enso_phase_labels_ensemble,
     save_nino34,
     save_enso_cp_tp,
     save_ipo,
     save_arctic_sst,
+    save_arctic_sst_forced_em,
 )
 
 from .slowdowns import (
@@ -92,6 +94,8 @@ __all__ = [
     'save_ipo',
     'compute_arctic_sst_index',
     'save_arctic_sst',
+    'compute_arctic_sst_forced_em',
+    'save_arctic_sst_forced_em',    
     # Slowdown / RILES functions
     'load_nsidc_slowdown_thresholds',
     'load_sie_monthly_files',

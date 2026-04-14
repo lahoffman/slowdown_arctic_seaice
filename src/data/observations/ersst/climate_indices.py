@@ -35,6 +35,7 @@ from typing import Optional, Tuple
 # Shared helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _area_mean_monthly(
     sst: np.ndarray,
     lat: np.ndarray,
@@ -108,6 +109,57 @@ def _monthly_anoms(
             clim[m] = np.nanmean(ts[sel])
 
     return ts - clim[months]
+
+def _fit_linear_trend(
+    x: np.ndarray,
+    t: np.ndarray,
+) -> np.ndarray:
+    """
+    Fit a linear trend to x as a function of t and return the fitted line.
+    """
+    mask = np.isfinite(x) & np.isfinite(t)
+    if mask.sum() < 2:
+        return np.full_like(x, np.nan, dtype=np.float64)
+
+    coeffs = np.polyfit(t[mask], x[mask], 1)
+    return np.polyval(coeffs, t)
+
+
+def _correct_forced_mean_and_trend(
+    obs: np.ndarray,
+    forced: np.ndarray,
+    t: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Correct a model forced-response series to observations by:
+      1. shifting the forced mean to the observed mean
+      2. replacing the forced linear trend with the observed linear trend
+
+    Returns
+    -------
+    forced_corrected : np.ndarray
+        Mean- and trend-corrected forced response
+    forced_mean_shifted : np.ndarray
+        Forced response after mean correction only
+    residual : np.ndarray
+        obs - forced_corrected
+    """
+    obs = np.asarray(obs, dtype=np.float64)
+    forced = np.asarray(forced, dtype=np.float64)
+    t = np.asarray(t, dtype=np.float64)
+
+    obs_mean = np.nanmean(obs)
+    forced_mean = np.nanmean(forced)
+
+    forced_mean_shifted = forced - forced_mean + obs_mean
+
+    trend_forced = _fit_linear_trend(forced_mean_shifted, t)
+    trend_obs = _fit_linear_trend(obs, t)
+
+    forced_corrected = forced_mean_shifted - trend_forced + trend_obs
+    residual = obs - forced_corrected
+
+    return forced_corrected, forced_mean_shifted, residual
 
 
 def _detrend_linear(x: np.ndarray) -> np.ndarray:
@@ -507,99 +559,195 @@ def compute_ipo_index(
 # Arctic SST Index
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _arctic_phase_labels(
     index_ts: np.ndarray,
     threshold: float = 1.0,
 ) -> np.ndarray:
     """
-    Label each time step as positive (+1), negative (-1), or neutral (0)
-    based on a threshold applied to a normalized index.
-
-    For a normalized index (mean ~0, std ~1) with threshold=1.0 this gives:
-        positive : index > +1
-        negative : index < -1
-        neutral  : otherwise
-
-    Parameters
-    ----------
-    index_ts : np.ndarray
-        Normalized index timeseries, shape (ntime,).
-    threshold : float, optional
-        Number of standard deviations for labelling (default: 1.0).
-
-    Returns
-    -------
-    np.ndarray
-        Integer labels: +1 (positive/warm), -1 (negative/cold), 0 (neutral).
+    Label each time step as positive (+1), negative (-1), or neutral (0).
     """
     labels = np.zeros(len(index_ts), dtype=int)
-    labels[index_ts > threshold]  =  1
+    labels[index_ts > threshold] = 1
     labels[index_ts < -threshold] = -1
     return labels
+
+def _month_index(year: int, month: int) -> int:
+    """
+    Convert year/month to an integer month index.
+    January of year 0 -> 0, February -> 1, etc.
+    """
+    return year * 12 + (month - 1)
+
+
+def _index_to_year_month(idx: int) -> Tuple[int, int]:
+    """
+    Convert integer month index back to (year, month).
+    """
+    year = idx // 12
+    month = (idx % 12) + 1
+    return year, month
 
 
 def compute_arctic_sst_index(
     sst_obs: np.ndarray,
-    lat: np.ndarray,
-    lon: np.ndarray,
+    sst_forced_em: np.ndarray,
+    lat_obs: np.ndarray,
+    lon_obs: np.ndarray,
     years: np.ndarray,
     baseline: Tuple[int, int] = (1990, 2020),
-    smooth_months: int = 5,
+    smooth_months: Optional[int] = 5,
     threshold: float = 1.0,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, dict]:
     """
-    Compute the Arctic SST Index from observed SST.
+    Compute an observational Arctic SST index using a CESM2 ensemble-mean
+    Arctic forced-response time series.
 
-    Defined as the cos(lat)-weighted area mean of SST over all longitudes
-    and all latitudes north of 60N, processed in the same way as Nino3.4:
-    area mean -> monthly anomalies -> linear detrend -> smooth -> normalize.
-
-    Labels use a +/- 1 standard deviation threshold on the normalized index.
+    Assumptions
+    -----------
+    - sst_obs starts in Jan 1854
+    - sst_forced_em starts in Jan 1990
+    - both are monthly and contiguous
 
     Parameters
     ----------
     sst_obs : np.ndarray
-        Regridded SST, shape (ntime, nlat, nlon).
-    lat, lon : np.ndarray
-        1D coordinate arrays (lon in 0-360 E).
+        Observed SST, shape (ntime_obs, nlat, nlon)
+    sst_forced_em : np.ndarray
+        CESM2 ensemble-mean Arctic area-mean SST, shape (ntime_forced,)
+    lat_obs, lon_obs : np.ndarray
+        Observation-grid latitude/longitude arrays
     years : np.ndarray
-        Year for each time step.
+        Year for each monthly timestep in sst_obs, shape (ntime_obs,)
     baseline : tuple, optional
-        Baseline period for climatology and normalization (default: 1990-2020).
-    smooth_months : int, optional
-        Running mean window in months (default: 5).
+        Baseline period for anomalies and normalization
+    smooth_months : int or None, optional
+        Running-mean window
     threshold : float, optional
-        Standard-deviation threshold for phase labelling (default: 1.0).
+        Threshold for labels
 
     Returns
     -------
-    arctic_sst : np.ndarray
-        Normalized Arctic SST index, shape (ntime,).
+    arctic_sst_index : np.ndarray
+        Normalized Arctic SST residual index over the overlap period
     labels : np.ndarray
-        Phase labels (+1 positive, -1 negative, 0 neutral), shape (ntime,).
+        Phase labels over the overlap period
+    diagnostics : dict
+        Intermediate series and alignment metadata
     """
-    # Area mean: all longitudes, latitudes north of 60N
-    # lonmin=0, lonmax=360 captures the full longitude range
-    ts = _area_mean_monthly(sst_obs, lat, lon,
-                            latmin=60, latmax=90, lonmin=0, lonmax=360)
+    # Built-in start dates
+    obs_start_year, obs_start_month = 1854, 1
+    forced_start_year, forced_start_month = 1990, 1
 
-    # Monthly anomalies
-    anoms = _monthly_anoms(ts, years, baseline=baseline)
+    # Observed Arctic area mean from full obs record
+    obs_arctic_full = _area_mean_monthly(
+        sst_obs,
+        lat_obs,
+        lon_obs,
+        latmin=60,
+        latmax=90,
+        lonmin=0,
+        lonmax=360,
+    )
 
-    # Linear detrend
-    anoms = _detrend_linear(anoms)
+    ntime_obs = len(obs_arctic_full)
+    ntime_forced = len(sst_forced_em)
 
-    # Smooth
-    anoms = uniform_filter1d(anoms, size=smooth_months, mode='nearest')
+    if len(years) != ntime_obs:
+        raise ValueError(
+            f'Length mismatch: years has length {len(years)}, '
+            f'but obs Arctic series has length {ntime_obs}'
+        )
 
-    # Normalize by baseline std
-    arctic_sst = _normalize_by_baseline_std(anoms, years, baseline=baseline)
+    # Convert starts to absolute month indices
+    obs_start_idx_abs = _month_index(obs_start_year, obs_start_month)
+    forced_start_idx_abs = _month_index(forced_start_year, forced_start_month)
 
-    # Phase labels
-    labels = _arctic_phase_labels(arctic_sst, threshold=threshold)
+    # Inclusive end month indices
+    obs_end_idx_abs = obs_start_idx_abs + ntime_obs - 1
+    forced_end_idx_abs = forced_start_idx_abs + ntime_forced - 1
 
-    return arctic_sst, labels
+    # Overlap in absolute month coordinates
+    overlap_start_abs = max(obs_start_idx_abs, forced_start_idx_abs)
+    overlap_end_abs = min(obs_end_idx_abs, forced_end_idx_abs)
 
+    if overlap_end_abs < overlap_start_abs:
+        raise ValueError(
+            'No temporal overlap between sst_obs and sst_forced_em.'
+        )
+
+    # Convert overlap to local array indices
+    obs_i0 = overlap_start_abs - obs_start_idx_abs
+    obs_i1 = overlap_end_abs - obs_start_idx_abs + 1
+
+    forced_i0 = overlap_start_abs - forced_start_idx_abs
+    forced_i1 = overlap_end_abs - forced_start_idx_abs + 1
+
+    # Slice both to overlap
+    obs_arctic = obs_arctic_full[obs_i0:obs_i1]
+    years_aligned = years[obs_i0:obs_i1]
+    forced_aligned = sst_forced_em[forced_i0:forced_i1]
+
+    if len(obs_arctic) != len(forced_aligned):
+        raise ValueError(
+            f'Alignment failed: obs overlap length = {len(obs_arctic)}, '
+            f'forced overlap length = {len(forced_aligned)}'
+        )
+
+    # Time axis for linear trend fitting
+    t = np.arange(len(obs_arctic), dtype=np.float64)
+
+    # Mean/trend-correct forced response to observations
+    forced_corrected, forced_mean_shifted, residual_raw = _correct_forced_mean_and_trend(
+        obs_arctic,
+        forced_aligned,
+        t,
+    )
+
+    # Monthly anomalies of the residual
+    residual_anom = _monthly_anoms(residual_raw, years_aligned, baseline=baseline)
+
+    # Optional smoothing
+    if smooth_months is not None and smooth_months > 1:
+        residual_anom = uniform_filter1d(
+            residual_anom,
+            size=smooth_months,
+            mode='nearest',
+        )
+
+    # Normalize
+    arctic_sst_index = _normalize_by_baseline_std(
+        residual_anom,
+        years_aligned,
+        baseline=baseline,
+    )
+
+    # Labels
+    labels = _arctic_phase_labels(arctic_sst_index, threshold=threshold)
+
+    overlap_start_year, overlap_start_month = _index_to_year_month(overlap_start_abs)
+    overlap_end_year, overlap_end_month = _index_to_year_month(overlap_end_abs)
+
+    diagnostics = {
+        'obs_arctic_full': obs_arctic_full,
+        'obs_arctic_aligned': obs_arctic,
+        'forced_arctic_aligned': forced_aligned,
+        'years_aligned': years_aligned,
+        'forced_arctic_mean_shifted': forced_mean_shifted,
+        'forced_arctic_corrected': forced_corrected,
+        'residual_raw': residual_raw,
+        'residual_anom': residual_anom,
+        'obs_time_start': (obs_start_year, obs_start_month),
+        'forced_time_start': (forced_start_year, forced_start_month),
+        'obs_time_end': _index_to_year_month(obs_end_idx_abs),
+        'forced_time_end': _index_to_year_month(forced_end_idx_abs),
+        'overlap_time_start': (overlap_start_year, overlap_start_month),
+        'overlap_time_end': (overlap_end_year, overlap_end_month),
+        'obs_slice': (obs_i0, obs_i1),
+        'forced_slice': (forced_i0, forced_i1),
+    }
+
+    return arctic_sst_index, labels, diagnostics
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Save helpers

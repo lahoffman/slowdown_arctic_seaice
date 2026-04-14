@@ -801,6 +801,87 @@ def compute_ipo_index(
 # Arctic SST Index
 # ─────────────────────────────────────────────────────────────────────────────
 
+def compute_arctic_sst_forced_em(
+    sst_dir: str,
+    lat: np.ndarray,
+    lon: np.ndarray,
+    years: np.ndarray,
+    member_groups: List[str] = ['first50', 'last50'],
+    verbose: bool = True,
+) -> np.ndarray:
+    """
+    Compute the CESM2 ensemble-mean forced Arctic SST time series.
+
+    This helper:
+      1. loads CESM2 SST separately for each calendar month
+      2. computes the Arctic (>60N, all longitudes) area mean for each member
+      3. computes the ensemble mean of that Arctic area-mean series
+      4. reshapes to a chronological monthly time series
+
+    Parameters
+    ----------
+    sst_dir : str or Path
+        Directory containing monthly CESM2 SST files:
+        sst_cesmle_{group}members_mon_{MONTH}_199001-210012.nc
+    lat, lon : np.ndarray
+        2D latitude/longitude arrays on the CESM2 grid
+    years : np.ndarray
+        Annual year values, shape (nyears,)
+    member_groups : list of str, optional
+        Ensemble-member groups to concatenate
+    verbose : bool, optional
+        Print progress
+
+    Returns
+    -------
+    forced_em_flat : np.ndarray
+        Ensemble-mean Arctic SST time series, shape (ntime,)
+        with chronological ordering:
+        [Jan_y0, Feb_y0, ..., Dec_y0, Jan_y1, ..., Dec_yN]
+    """
+    sst_dir = Path(sst_dir)
+    nyear = len(years)
+    ntime = nyear * 12
+
+    forced_monthly = []  # each entry: (nyears,)
+
+    for m_label in MONTH_LABELS:
+        if verbose:
+            print(f'  Arctic forced EM: processing {m_label} ...', end='\r')
+
+        # Load all members for this calendar month
+        sst_m = _load_month_sst_all_members(sst_dir, m_label, member_groups)
+        # sst_m: (nens, nyears, nlat, nlon)
+
+        # Arctic area mean for each member
+        ts_m = _area_mean_ensemble(
+            sst_m,
+            lat,
+            lon,
+            latmin=60,
+            latmax=90,
+            lonmin=0,
+            lonmax=360,
+        )
+        # ts_m: (nens, nyears)
+
+        # Ensemble mean of the Arctic area mean
+        forced_em_m = np.nanmean(ts_m, axis=0)
+        # forced_em_m: (nyears,)
+
+        forced_monthly.append(forced_em_m)
+
+    if verbose:
+        print('  Arctic forced EM: all months done.           ')
+
+    # Stack -> (12, nyears)
+    forced_stack = np.array(forced_monthly)
+
+    # Reshape to chronological monthly series -> (ntime,)
+    forced_em_flat = forced_stack.transpose(1, 0).reshape(ntime)
+
+    return forced_em_flat
+
 def _arctic_phase_labels_ensemble(
     index_arr: np.ndarray,
     threshold: float = 1.0,
@@ -1148,6 +1229,62 @@ def save_arctic_sst(
     ds.to_netcdf(output_file, format='NETCDF4', encoding=encoding)
     print(f"✓ Saved Arctic SST to: {output_file}")
 
+
+def save_arctic_sst_forced_em(
+    arctic_sst_forced_em_flat: np.ndarray,
+    years: np.ndarray,
+    output_file: str,
+) -> None:
+    """
+    Save the CESM2-LE ensemble-mean Arctic SST forced-response time series.
+
+    Parameters
+    ----------
+    arctic_sst_forced_em_flat : np.ndarray
+        Chronological monthly ensemble-mean Arctic SST time series,
+        shape (ntime,), ordered as:
+        [Jan_y0, Feb_y0, ..., Dec_y0, Jan_y1, ..., Dec_yN]
+    years : np.ndarray
+        Unique years, shape (nyear,).
+    output_file : str
+        Output NetCDF path.
+    """
+    Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+
+    nyear = len(years)
+    ntime = len(arctic_sst_forced_em_flat)
+
+    if ntime != nyear * 12:
+        raise ValueError(
+            f'Expected arctic_sst_forced_em_flat to have length {nyear * 12} '
+            f'for {nyear} years, but got {ntime}.'
+        )
+
+    arctic_sst_forced_em = arctic_sst_forced_em_flat.reshape(nyear, 12)
+
+    ds = xr.Dataset(
+        {
+            "arctic_sst_forced_em":      (("nyr", "nm"), arctic_sst_forced_em),
+            "arctic_sst_forced_em_flat": (("nt",), arctic_sst_forced_em_flat),
+        },
+        coords={
+            "nyr": years,
+            "nm":  np.arange(12),
+            "nt":  np.arange(ntime),
+        },
+    )
+
+    ds.attrs["description"] = (
+        "CESM2-LE ensemble-mean Arctic SST forced-response time series "
+        "(cos-lat weighted mean, >60N all longitudes). "
+        "Saved both as (nyear, 12) and chronological monthly flat series."
+    )
+
+    encoding = {v: {"zlib": True, "complevel": 4} for v in ds.data_vars}
+    ds.to_netcdf(output_file, format="NETCDF4", encoding=encoding)
+
+    print(f"✓ Saved Arctic SST forced ensemble mean to: {output_file}")
+    
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Example usage
