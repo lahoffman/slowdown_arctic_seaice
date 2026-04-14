@@ -27,7 +27,8 @@ from .download import (
 from .combine import (
     combine_ensemble_members,
     separate_by_month,
-    process_cesmle_variable
+    process_cesmle_variable,
+    calculate_annual_mean,
 )
 
 from .metrics import (

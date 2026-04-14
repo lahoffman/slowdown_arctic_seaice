@@ -67,9 +67,10 @@ VARIABLE_CONFIG = {
     },
 }
 
-# Base URL for CESM2-LE data
-BASE_URL = "https://osdf-director.osg-htc.org/ncar/gdex/d651056/CESM2-LE"
 
+# Base URL for CESM2-LE data
+#BASE_URL = "https://osdf-director.osg-htc.org/ncar/gdex/d651056/CESM2-LE"
+BASE_URL = "https://data.gdex.ucar.edu/d651056/CESM2-LE"
 
 def download_raw_data(
     variable: str,
