@@ -36,14 +36,16 @@ from src.data.observations.ersst.climate_indices import (
     compute_nino34_index,
     compute_enso_cp_tp_indices,
     compute_ipo_index,
+    compute_arctic_sst_index,
     load_grid_latlon,
     save_nino34,
     save_enso_cp_tp,
     save_ipo,
+    save_arctic_sst,
 )
 from src.data.observations.ersst.download import load_ersst
 
-ALL_INDICES = ['nino34', 'enso_cptp', 'ipo']
+ALL_INDICES = ['nino34', 'enso_cptp', 'ipo', 'arctic_sst']
 
 
 def _sst_dir() -> Path:
@@ -85,13 +87,22 @@ def compute_enso_cptp(sst_dir, lat, lon, years) -> None:
 
 def compute_ipo(sst_dir, lat, lon, years) -> None:
     """Compute IPO index and save."""
-    print('\n[3/3] Computing IPO index ...')
+    print('\n[3/4] Computing IPO index ...')
     ipo, ipo_filtered, labels, labels_filtered = compute_ipo_index(
         sst_dir, lat, lon, years
     )
 
     output_file = str(_indices_dir() / 'ersstv5_ipo_index.nc')
     save_ipo(ipo, ipo_filtered, labels, labels_filtered, years, output_file)
+
+
+def compute_arctic(sst_dir, lat, lon, years) -> None:
+    """Compute Arctic SST index and save."""
+    print('\n[4/4] Computing Arctic SST index ...')
+    arctic_sst, labels = compute_arctic_sst_index(sst_dir, lat, lon, years)
+
+    output_file = str(_indices_dir() / 'ersstv5_arctic_sst_index.nc')
+    save_arctic_sst(arctic_sst, labels, years, output_file)
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +169,9 @@ def main() -> None:
 
     if 'ipo' in indices:
         compute_ipo(sst, lat, lon, years)
+
+    if 'arctic_sst' in indices:
+        compute_arctic(sst, lat, lon, years)
 
     print('\n' + '=' * 70)
     print('Pipeline complete!')

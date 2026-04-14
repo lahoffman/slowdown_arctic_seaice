@@ -798,6 +798,145 @@ def compute_ipo_index(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Arctic SST Index
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _arctic_phase_labels_ensemble(
+    index_arr: np.ndarray,
+    threshold: float = 1.0,
+) -> np.ndarray:
+    """
+    Label each time step for each ensemble member as positive (+1),
+    negative (-1), or neutral (0) based on a +/- threshold on a normalized
+    index.
+
+    Parameters
+    ----------
+    index_arr : np.ndarray
+        Normalized index, shape (nens, ntime).
+    threshold : float, optional
+        Standard-deviation threshold for labelling (default: 1.0).
+
+    Returns
+    -------
+    np.ndarray
+        Integer labels, shape (nens, ntime).
+    """
+    labels = np.zeros_like(index_arr, dtype=int)
+    labels[index_arr > threshold]  =  1
+    labels[index_arr < -threshold] = -1
+    return labels
+
+
+def compute_arctic_sst_index(
+    sst_dir: str,
+    lat: np.ndarray,
+    lon: np.ndarray,
+    years: np.ndarray,
+    baseline: Tuple[int, int] = (1990, 2020),
+    smooth_months: int = 5,
+    threshold: float = 1.0,
+    remove_forced: bool = True,
+    member_groups: List[str] = ['first50', 'last50'],
+    verbose: bool = True,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Compute the Arctic SST Index for the CESM2-LE ensemble.
+
+    Defined as the cos(lat)-weighted area mean of SST over all longitudes
+    and all latitudes north of 60N.  Processing follows the same pipeline
+    as Nino3.4: per-month loading -> forced signal removal -> area mean ->
+    monthly anomalies -> stack to chronological -> smooth -> normalize.
+
+    Labels use a +/- 1 standard deviation threshold on the normalized index.
+
+    Parameters
+    ----------
+    sst_dir : str or Path
+        Directory containing the monthly SST files.
+    lat, lon : np.ndarray
+        2D arrays from ``load_grid_latlon(grid_file)``.
+    years : np.ndarray
+        Annual year values, shape (nyears,).
+    baseline : tuple, optional
+        Baseline period (default: 1990-2020).
+    smooth_months : int, optional
+        Running mean window in months (default: 5).
+    threshold : float, optional
+        Standard-deviation threshold for phase labelling (default: 1.0).
+    remove_forced : bool, optional
+        Subtract ensemble mean before computing (default: True).
+    member_groups : list of str, optional
+        SST file group names (default: ['first50', 'last50']).
+    verbose : bool, optional
+        Print progress (default: True).
+
+    Returns
+    -------
+    arctic_sst : np.ndarray
+        Normalized Arctic SST index, shape (nens, nyear, 12).
+    arctic_sst_flat : np.ndarray
+        Normalized Arctic SST index, shape (nens, ntime) [chronological].
+    labels : np.ndarray
+        Phase labels (+1 positive, -1 negative, 0 neutral), shape (nens, nyear, 12).
+    labels_flat : np.ndarray
+        Phase labels, shape (nens, ntime).
+    """
+    sst_dir = Path(sst_dir)
+    nyear   = len(years)
+    ntime   = nyear * 12
+
+    # Chronological years_flat for normalize function
+    years_flat = np.tile(years, (12, 1)).transpose(1, 0).reshape(ntime)
+
+    arctic_monthly = []   # (nens, nyears) per calendar month
+
+    for m_label in MONTH_LABELS:
+        if verbose:
+            print(f'  Arctic SST: processing {m_label} ...', end='\r')
+
+        # Load all members for this calendar month
+        sst_m = _load_month_sst_all_members(sst_dir, m_label, member_groups)
+
+        # Remove forced signal
+        sst_int = _remove_forced_signal(sst_m) if remove_forced else sst_m
+
+        # Area mean: all longitudes, latitudes > 60N
+        ts_m = _area_mean_ensemble(sst_int, lat, lon,
+                                   latmin=60, latmax=90, lonmin=0, lonmax=360)
+
+        # Monthly anomaly
+        anom_m = _monthly_anoms_ensemble(ts_m, years, baseline=baseline)
+
+        arctic_monthly.append(anom_m)
+
+    if verbose:
+        print('  Arctic SST: all months done.           ')
+
+    # Stack -> (12, nens, nyears) -> transpose -> (nens, nyears, 12) -> flatten
+    arctic_stack = np.array(arctic_monthly)
+    nens = arctic_stack.shape[1]
+    arctic_flat = arctic_stack.transpose(1, 2, 0).reshape(nens, ntime)
+
+    # Smooth
+    arctic_flat = uniform_filter1d(arctic_flat, size=smooth_months,
+                                   axis=1, mode='nearest')
+
+    # Normalize by baseline-period std
+    arctic_flat = _normalize_by_baseline_std_ensemble(arctic_flat,
+                                                      years_flat, baseline=baseline)
+
+    # Phase labels
+    labels_flat = _arctic_phase_labels_ensemble(arctic_flat, threshold=threshold)
+
+    # Reshape to (nens, nyear, 12)
+    arctic_sst = arctic_flat.reshape(nens, nyear, 12)
+    labels     = labels_flat.reshape(nens, nyear, 12)
+
+    return arctic_sst, arctic_flat, labels, labels_flat
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Save helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -949,6 +1088,65 @@ def save_ipo(
     encoding = {v: {"zlib": True, "complevel": 4} for v in ds.data_vars}
     ds.to_netcdf(output_file, format='NETCDF4', encoding=encoding)
     print(f"✓ Saved IPO to: {output_file}")
+
+
+def save_arctic_sst(
+    arctic_sst: np.ndarray,
+    labels: np.ndarray,
+    years: np.ndarray,
+    output_file: str,
+    arctic_sst_jja: Optional[np.ndarray] = None,
+    labels_jja: Optional[np.ndarray] = None,
+) -> None:
+    """
+    Save CESM2-LE Arctic SST Index and labels to NetCDF.
+
+    Parameters
+    ----------
+    arctic_sst : np.ndarray
+        Normalized Arctic SST index, shape (nens, nyear, nmon=12).
+    labels : np.ndarray
+        Phase labels, shape (nens, nyear, nmon=12).
+    years : np.ndarray
+        Unique years, shape (nyear,).
+    output_file : str
+        Output NetCDF path.
+    arctic_sst_jja : np.ndarray, optional
+        JJA subset, shape (nens, nyear, 3).
+    labels_jja : np.ndarray, optional
+        JJA labels, shape (nens, nyear, 3).
+    """
+    Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+    nens, nyear, nmon = arctic_sst.shape
+
+    data_vars = {
+        "arctic_sst_months": (("nens", "nyr", "nm"), arctic_sst),
+        "arctic_labels":     (("nens", "nyr", "nm"), labels),
+    }
+    coords = {
+        "nens": np.arange(nens),
+        "nyr":  years,
+        "nm":   np.arange(nmon),
+    }
+
+    if arctic_sst_jja is not None:
+        data_vars["arctic_sst_jja"] = (("nens", "nyr", "njja"), arctic_sst_jja)
+        coords["njja"] = np.arange(arctic_sst_jja.shape[2])
+    if labels_jja is not None:
+        data_vars["arctic_labels_jja"] = (("nens", "nyr", "njja"), labels_jja)
+        if "njja" not in coords:
+            coords["njja"] = np.arange(labels_jja.shape[2])
+
+    ds = xr.Dataset(data_vars, coords=coords)
+    ds.attrs['description'] = (
+        'CESM2-LE Arctic SST Index (cos-lat weighted mean, >60N all lons) '
+        'and phase labels (internal variability). '
+        '+1 = positive/warm, -1 = negative/cold, 0 = neutral'
+    )
+
+    encoding = {v: {"zlib": True, "complevel": 4} for v in ds.data_vars}
+    ds.to_netcdf(output_file, format='NETCDF4', encoding=encoding)
+    print(f"✓ Saved Arctic SST to: {output_file}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

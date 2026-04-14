@@ -45,12 +45,14 @@ from src.data.cesm2le.climate_indices import (
     compute_nino34_index,
     compute_enso_cp_tp_indices,
     compute_ipo_index,
+    compute_arctic_sst_index,
     save_nino34,
     save_enso_cp_tp,
     save_ipo,
+    save_arctic_sst,
 )
 
-ALL_INDICES = ['nino34', 'enso_cptp', 'ipo']
+ALL_INDICES = ['nino34', 'enso_cptp', 'ipo', 'arctic_sst']
 
 
 def _sst_monthly_dir() -> Path:
@@ -96,13 +98,26 @@ def compute_enso_cptp(sst_dir, lat, lon, years) -> None:
 
 def compute_ipo(sst_dir, lat, lon, years) -> None:
     """Compute IPO index and save."""
-    print('\n[3/3] Computing IPO index ...')
+    print('\n[3/4] Computing IPO index ...')
     ipo, _, ipo_filtered, _, labels, _, labels_filtered, _ = compute_ipo_index(
         sst_dir, lat, lon, years
     )
 
     output_file = str(_indices_dir() / 'cesm2le_ipo_index.nc')
     save_ipo(ipo, ipo_filtered, labels, labels_filtered, years, output_file)
+
+
+def compute_arctic(sst_dir, lat, lon, years) -> None:
+    """Compute Arctic SST index and save."""
+    print('\n[4/4] Computing Arctic SST index ...')
+    arctic_sst, _, labels, _ = compute_arctic_sst_index(sst_dir, lat, lon, years)
+
+    arctic_sst_jja = arctic_sst[:, :, 5:8]
+    labels_jja     = labels[:, :, 5:8]
+
+    output_file = str(_indices_dir() / 'cesm2le_arctic_sst_index.nc')
+    save_arctic_sst(arctic_sst, labels, years, output_file,
+                    arctic_sst_jja=arctic_sst_jja, labels_jja=labels_jja)
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +184,9 @@ def main() -> None:
 
     if 'ipo' in indices:
         compute_ipo(_sst_monthly_dir(), lat, lon, years)
+
+    if 'arctic_sst' in indices:
+        compute_arctic(_sst_monthly_dir(), lat, lon, years)
 
     print('\n' + '=' * 70)
     print('Pipeline complete!')

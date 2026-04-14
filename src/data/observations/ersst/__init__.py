@@ -25,11 +25,13 @@ from .climate_indices import (
     compute_nino34_index,
     compute_enso_cp_tp_indices,
     compute_ipo_index,
+    compute_arctic_sst_index,
     chebyshev_lowpass,
     enso_phase_labels,
     save_nino34,
     save_enso_cp_tp,
-    save_ipo
+    save_ipo,
+    save_arctic_sst,
 )
 
 __all__ = [
@@ -50,4 +52,6 @@ __all__ = [
     'save_nino34',
     'save_enso_cp_tp',
     'save_ipo',
+    'compute_arctic_sst_index',
+    'save_arctic_sst',
 ]

@@ -13,6 +13,7 @@ Indices
 - N_CT:    Cold-tongue index = N3 - α*N4
 - N_WP:    Warm-pool index   = N4 - α*N3  (α = 2/5 if N3*N4 > 0, else 0)
 - IPO:     Interdecadal Pacific Oscillation (tropical - 0.5*(N.Pac + S.Pac))
+- Arctic SST Index: cos(lat)-weighted mean SST north of 60N, all longitudes
 
 Reference: Henley et al. (2015) for IPO; Takahashi et al. for CP/TP split
 
@@ -23,6 +24,7 @@ Email: lhoffma2@ucsc.edu
 import numpy as np
 import xarray as xr
 import pandas as pd
+import netCDF4 as nc
 from scipy.ndimage import uniform_filter1d
 from scipy.signal import cheby1, filtfilt
 from pathlib import Path
@@ -502,6 +504,104 @@ def compute_ipo_index(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Arctic SST Index
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _arctic_phase_labels(
+    index_ts: np.ndarray,
+    threshold: float = 1.0,
+) -> np.ndarray:
+    """
+    Label each time step as positive (+1), negative (-1), or neutral (0)
+    based on a threshold applied to a normalized index.
+
+    For a normalized index (mean ~0, std ~1) with threshold=1.0 this gives:
+        positive : index > +1
+        negative : index < -1
+        neutral  : otherwise
+
+    Parameters
+    ----------
+    index_ts : np.ndarray
+        Normalized index timeseries, shape (ntime,).
+    threshold : float, optional
+        Number of standard deviations for labelling (default: 1.0).
+
+    Returns
+    -------
+    np.ndarray
+        Integer labels: +1 (positive/warm), -1 (negative/cold), 0 (neutral).
+    """
+    labels = np.zeros(len(index_ts), dtype=int)
+    labels[index_ts > threshold]  =  1
+    labels[index_ts < -threshold] = -1
+    return labels
+
+
+def compute_arctic_sst_index(
+    sst_obs: np.ndarray,
+    lat: np.ndarray,
+    lon: np.ndarray,
+    years: np.ndarray,
+    baseline: Tuple[int, int] = (1990, 2020),
+    smooth_months: int = 5,
+    threshold: float = 1.0,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Compute the Arctic SST Index from observed SST.
+
+    Defined as the cos(lat)-weighted area mean of SST over all longitudes
+    and all latitudes north of 60N, processed in the same way as Nino3.4:
+    area mean -> monthly anomalies -> linear detrend -> smooth -> normalize.
+
+    Labels use a +/- 1 standard deviation threshold on the normalized index.
+
+    Parameters
+    ----------
+    sst_obs : np.ndarray
+        Regridded SST, shape (ntime, nlat, nlon).
+    lat, lon : np.ndarray
+        1D coordinate arrays (lon in 0-360 E).
+    years : np.ndarray
+        Year for each time step.
+    baseline : tuple, optional
+        Baseline period for climatology and normalization (default: 1990-2020).
+    smooth_months : int, optional
+        Running mean window in months (default: 5).
+    threshold : float, optional
+        Standard-deviation threshold for phase labelling (default: 1.0).
+
+    Returns
+    -------
+    arctic_sst : np.ndarray
+        Normalized Arctic SST index, shape (ntime,).
+    labels : np.ndarray
+        Phase labels (+1 positive, -1 negative, 0 neutral), shape (ntime,).
+    """
+    # Area mean: all longitudes, latitudes north of 60N
+    # lonmin=0, lonmax=360 captures the full longitude range
+    ts = _area_mean_monthly(sst_obs, lat, lon,
+                            latmin=60, latmax=90, lonmin=0, lonmax=360)
+
+    # Monthly anomalies
+    anoms = _monthly_anoms(ts, years, baseline=baseline)
+
+    # Linear detrend
+    anoms = _detrend_linear(anoms)
+
+    # Smooth
+    anoms = uniform_filter1d(anoms, size=smooth_months, mode='nearest')
+
+    # Normalize by baseline std
+    arctic_sst = _normalize_by_baseline_std(anoms, years, baseline=baseline)
+
+    # Phase labels
+    labels = _arctic_phase_labels(arctic_sst, threshold=threshold)
+
+    return arctic_sst, labels
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Save helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -571,3 +671,29 @@ def save_ipo(
     encoding = {v: {"zlib": True, "complevel": 4} for v in ds.data_vars}
     ds.to_netcdf(output_file, encoding=encoding)
     print(f"✓ Saved IPO to: {output_file}")
+
+
+def save_arctic_sst(
+    arctic_sst: np.ndarray,
+    labels: np.ndarray,
+    dates: pd.DatetimeIndex,
+    output_file: str
+) -> None:
+    """Save Arctic SST Index and labels to NetCDF."""
+    Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+
+    ds = xr.Dataset(
+        {
+            "arctic_sst": (("nt",), arctic_sst),
+            "labels":     (("nt",), labels),
+        },
+        coords={"nt": np.arange(len(arctic_sst))},
+    )
+    ds.attrs['description'] = (
+        'ERSSTv5 Arctic SST Index (cos-lat weighted mean, >60N all lons) '
+        'and phase labels (+1 positive, -1 negative, 0 neutral)'
+    )
+
+    encoding = {v: {"zlib": True, "complevel": 4} for v in ds.data_vars}
+    ds.to_netcdf(output_file, encoding=encoding)
+    print(f"✓ Saved Arctic SST to: {output_file}")
