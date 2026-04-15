@@ -26,11 +26,13 @@ Outputs (one per split, k = 0 … 8)
 
 Usage
 -----
-    python scripts/03_cesm2le_tvt_splits.py
+    python scripts/03_cesm2le_tvt_splits.py                # full pipeline
+    python scripts/03_cesm2le_tvt_splits.py --climate-indices-only  # indices only
 
 Author: Lauren Hoffman  <lhoffma2@ucsc.edu>
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -219,7 +221,89 @@ def save_climate_indices_split(
 
 
 # =============================================================================
-# Main
+# CLI
+# =============================================================================
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description='Build TVT data splits for the JJA SST CNN.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument(
+        '--climate-indices-only', '-c',
+        action='store_true',
+        default=False,
+        help='Only split and save climate indices (skip SST / slowdown / '
+             'landmask processing).  Requires the existing TVT split files '
+             'to already exist (used only to read the block assignments).',
+    )
+    return parser.parse_args()
+
+
+# =============================================================================
+# Main — climate-indices-only (lightweight fast path)
+# =============================================================================
+
+def main_climate_indices_only() -> None:
+    """
+    Replay the block assignments from _get_block_indices and split climate
+    indices *without* loading SST, slowdown, or the land mask.
+    """
+    from src.cnn.splits import _get_block_indices
+
+    print()
+    print('=' * 70)
+    print('03  —  CESM2-LE TVT Splits  (climate indices only)')
+    print('=' * 70)
+    print(f'  Data root    : {paths.DATA_ROOT}')
+    print(f'  Years        : {START_YEAR}–{END_YEAR}')
+    print(f'  N splits     : {N_SPLITS}')
+    print(f'  Output dir   : {paths.TVT_SPLITS_DIR}')
+    print('=' * 70)
+
+    # ------------------------------------------------------------------
+    # 1.  Load climate indices
+    # ------------------------------------------------------------------
+    print('\n[1] Loading CESM2-LE climate indices (JJA mean) ...')
+    climate_indices = load_climate_indices_jja(START_YEAR, END_YEAR)
+    if not climate_indices:
+        print('No climate indices found — nothing to do.')
+        return
+
+    # ------------------------------------------------------------------
+    # 2.  Replay block assignments and split
+    # ------------------------------------------------------------------
+    print(f'\n[2] Splitting indices across {N_SPLITS} TVT splits ...\n')
+
+    for k, test_block, val_block, train_blocks in _get_block_indices(N_SPLITS, N_BLOCKS):
+        print(f'  Split {k}  '
+              f'(test={test_block}, val={val_block}, '
+              f'train={train_blocks})')
+
+        idx_split = {}
+        for idx_name, idx_arr in climate_indices.items():
+            tr, va, te = block_tvt_split(
+                idx_arr, train_blocks, val_block, test_block,
+                N_BLOCKS, BLOCK_SIZE,
+            )
+            idx_split[f'{idx_name}_tr'] = tr
+            idx_split[f'{idx_name}_va'] = va
+            idx_split[f'{idx_name}_te'] = te
+
+        save_climate_indices_split(
+            idx_split, k, paths.climate_indices_split_path(k),
+        )
+
+    print()
+    print('=' * 70)
+    print('Done.  Climate index splits saved to:')
+    print(f'  {paths.TVT_SPLITS_DIR}')
+    print('=' * 70 + '\n')
+
+
+# =============================================================================
+# Main — full pipeline
 # =============================================================================
 
 def main() -> None:
@@ -359,4 +443,8 @@ def main() -> None:
 
 
 if __name__ == '__main__':
-    main()
+    args = parse_args()
+    if args.climate_indices_only:
+        main_climate_indices_only()
+    else:
+        main()
