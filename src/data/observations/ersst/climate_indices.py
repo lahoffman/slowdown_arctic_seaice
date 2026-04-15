@@ -832,16 +832,18 @@ def save_arctic_sst(
 
     ds = xr.Dataset(
         {
-            "arctic_sst": (("nt",), arctic_sst),
-            "labels":     (("nt",), labels),
+            "arctic_sst": (("time",), arctic_sst),
+            "labels":     (("time",), labels),
         },
-        coords={"nt": np.arange(len(arctic_sst))},
+        coords={"time": dates},
     )
-    ds.attrs['description'] = (
-        'ERSSTv5 Arctic SST Index (cos-lat weighted mean, >60N all lons) '
-        'and phase labels (+1 positive, -1 negative, 0 neutral)'
+    ds.attrs["description"] = (
+        "ERSSTv5 Arctic SST Index (cos-lat weighted mean, >60N all lons) "
+        "and phase labels (+1 positive, -1 negative, 0 neutral)"
     )
 
     encoding = {v: {"zlib": True, "complevel": 4} for v in ds.data_vars}
+    encoding["time"] = {"dtype": "float64"}
+
     ds.to_netcdf(output_file, encoding=encoding)
     print(f"✓ Saved Arctic SST to: {output_file}")

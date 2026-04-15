@@ -62,8 +62,8 @@ def _indices_dir() -> Path:
     """Output directory for climate index NetCDF files."""
     return paths.ERSST_DIR 
 
-def _cesm_forced_dir() -> Path:
-    """Directory containing CESM2-LE forced ensemble mean indices."""
+def _cesm_forced_file() -> Path:
+    """CESM2-LE Arctic SST forced ensemble mean NetCDF file."""
     return paths.CESM2LE_DIR / 'climate_indices' / 'cesm2le_arctic_sst_forced_em.nc'
 
 # ---------------------------------------------------------------------------
@@ -99,13 +99,31 @@ def compute_ipo(sst_dir, lat, lon, years) -> None:
     save_ipo(ipo, ipo_filtered, labels, labels_filtered, years, output_file)
 
 
-def compute_arctic(sst_dir, lat, lon, years) -> None:
+def compute_arctic(sst_obs, lat, lon, years, dates) -> None:
     """Compute Arctic SST index and save."""
     print('\n[4/4] Computing Arctic SST index ...')
-    arctic_sst, labels = compute_arctic_sst_index(sst_dir, _cesm_forced_dir(), lat, lon, years)
+
+    forced_file = _cesm_forced_file()
+    if not forced_file.exists():
+        raise FileNotFoundError(f'CESM2 forced EM file not found: {forced_file}')
+
+    ds_forced = nc.Dataset(forced_file, 'r')
+    sst_forced_em = np.array(ds_forced.variables['arctic_sst_forced_em_flat'][:])
+    ds_forced.close()
+
+    arctic_sst, labels, diagnostics = compute_arctic_sst_index(
+        sst_obs,
+        sst_forced_em,
+        lat,
+        lon,
+        years,
+    )
+
+    obs_i0, obs_i1 = diagnostics['obs_slice']
+    dates_aligned = dates[obs_i0:obs_i1]
 
     output_file = str(_indices_dir() / 'ersstv5_arctic_sst_index.nc')
-    save_arctic_sst(arctic_sst, labels, years, output_file)
+    save_arctic_sst(arctic_sst, labels, dates_aligned, output_file)
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +163,7 @@ def main() -> None:
     print(f'  SST dir    : {_sst_dir()}')
     print(f'  Grid file  : {_grid_file()}')
     print(f'  Output dir : {_indices_dir()}')
+    print(f'  CESM forced: {_cesm_forced_file()}')
     print('=' * 70)
 
     _indices_dir().mkdir(parents=True, exist_ok=True)
@@ -174,7 +193,7 @@ def main() -> None:
         compute_ipo(sst, lat, lon, years)
 
     if 'arctic_sst' in indices:
-        compute_arctic(sst, lat, lon, years)
+        compute_arctic(sst, lat, lon, years, dates)
 
     print('\n' + '=' * 70)
     print('Pipeline complete!')
