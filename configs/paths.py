@@ -139,6 +139,10 @@ CESM2LE_SIE_TRENDS = CESM2LE_DIR / 'sie_cesmle_linear_decadal_trend_monthly_1990
 CESM2LE_SLOWDOWNS_DIR = CESM2LE_DIR / 'slowdowns'
 CESM2LE_SLOWDOWNS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Climate indices (from scripts/02_cesm2le_climate_indices.py)
+CESM2LE_CLIMATE_INDICES_DIR = CESM2LE_DIR / 'climate_indices'
+CESM2LE_CLIMATE_INDICES_DIR.mkdir(parents=True, exist_ok=True)
+
 def cesm2le_slowdown_file(variable: str = 'sie', month: str = 'SEP',
                            start_year: int = 1990, end_year: int = 2100) -> Path:
     """Path to the slowdown classification NetCDF for one variable and month.
@@ -206,3 +210,18 @@ def attribution_path(split_idx: int, run_idx: int) -> Path:
 def metrics_path(split_idx: int) -> Path:
     """Path to a saved metrics Dataset NetCDF for a given split."""
     return RESULTS_DIR / 'metrics' / f'cnn_jja_metrics_split{split_idx}.nc'
+
+
+def climate_indices_split_path(split_idx: int) -> Path:
+    """Path to split-aligned CESM2-LE climate index NetCDF for a given split.
+
+    The file is produced by scripts/03_cesm2le_tvt_splits.py and contains
+    JJA-mean Niño3.4, IPO (filtered), and Arctic SST index values aligned
+    with the flattened training / validation / test samples in the TVT split.
+
+    Parameters
+    ----------
+    split_idx : int
+        Zero-based TVT split index (0–8).
+    """
+    return TVT_SPLITS_DIR / f'cesm2le_climate_indices_split{split_idx}.nc'

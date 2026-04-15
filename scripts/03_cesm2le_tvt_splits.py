@@ -45,6 +45,7 @@ from configs import paths
 from src.cnn.splits import (
     load_jja_sst_demeaned,
     iter_splits,
+    block_tvt_split,
     standardize,
     apply_landmask,
     save_tvt_split,
@@ -73,6 +74,9 @@ MEMBER_GROUPS = ['first50', 'last50']
 
 # NetCDF variable name for SST inside the monthly files
 SST_VARNAME = 'sst_mon'
+
+# Climate index files (output of scripts/02_cesm2le_climate_indices.py)
+CLIMATE_INDICES_DIR = paths.CESM2LE_DIR / 'climate_indices'
 
 
 # =============================================================================
@@ -122,6 +126,96 @@ def load_slowdown_labels(
           f"years {start_year}–{end_year}, "
           f"prevalence {slowdown.mean():.3f}")
     return slowdown.astype(np.int8)
+
+
+def load_climate_indices_jja(
+    start_year: int,
+    end_year: int,
+) -> dict:
+    """
+    Load JJA-mean CESM2-LE climate indices for the TVT year range.
+
+    Returns a dict with keys ``'nino34'``, ``'ipo'``, ``'arctic'``, each
+    an array of shape ``(nens, nyear)`` containing the JJA seasonal mean
+    of the corresponding climate index.  Any index whose source file is
+    missing is silently skipped.
+
+    Parameters
+    ----------
+    start_year, end_year : int
+        Year range to select (must match the SST / slowdown range).
+    """
+    index_specs = [
+        ('nino34', 'cesm2le_nino34_index.nc',     'nino34_months'),
+        ('ipo',    'cesm2le_ipo_index.nc',         'ipo_filtered'),
+        ('arctic', 'cesm2le_arctic_sst_index.nc',  'arctic_sst_months'),
+    ]
+    out = {}
+    for key, fname, varname in index_specs:
+        fpath = CLIMATE_INDICES_DIR / fname
+        if not fpath.exists():
+            print(f'  [skip] {fname} not found — {key} index will be omitted')
+            continue
+        with xr.open_dataset(fpath) as ds:
+            arr = ds[varname].sel(nyr=slice(start_year, end_year)).values
+        out[key] = np.nanmean(arr[:, :, 5:8], axis=2)   # JJA mean → (nens, nyear)
+        print(f'  {key:8s} JJA: shape {out[key].shape}')
+    return out
+
+
+def save_climate_indices_split(
+    indices_split: dict,
+    split_idx: int,
+    savepath,
+) -> None:
+    """
+    Save split-aligned JJA-mean climate index arrays to NetCDF.
+
+    Parameters
+    ----------
+    indices_split : dict
+        Keys like ``'nino34_tr'``, ``'ipo_va'``, ``'arctic_te'``, each a 1-D
+        float array with one value per sample.
+    split_idx : int
+        TVT split index (0–8).
+    savepath : Path or str
+        Output NetCDF path.
+    """
+    from pathlib import Path
+    savepath = Path(savepath)
+    savepath.parent.mkdir(parents=True, exist_ok=True)
+
+    data_vars = {}
+    for idx_name in ('nino34', 'ipo', 'arctic'):
+        for part in ('tr', 'va', 'te'):
+            key = f'{idx_name}_{part}'
+            if key in indices_split:
+                dim = f'n{part}'
+                data_vars[key] = ((dim,), indices_split[key].astype(np.float32))
+
+    if not data_vars:
+        print(f'  [skip] No climate indices to save for split {split_idx}')
+        return
+
+    ds = xr.Dataset(data_vars)
+    ds.attrs['split_idx'] = split_idx
+    ds.attrs['description'] = (
+        f'JJA-mean climate indices aligned with TVT split {split_idx}. '
+        'Indices: nino34 (Niño3.4), ipo (IPO filtered), arctic (Arctic SST).'
+    )
+    for v in ds.data_vars:
+        ds[v].attrs['long_name'] = (
+            v.replace('nino34', 'Niño3.4 JJA')
+             .replace('ipo', 'IPO filtered JJA')
+             .replace('arctic', 'Arctic SST JJA')
+             .replace('_tr', ' (train)')
+             .replace('_va', ' (validation)')
+             .replace('_te', ' (test)')
+        )
+
+    encoding = {v: {'zlib': True, 'complevel': 4} for v in ds.data_vars}
+    ds.to_netcdf(savepath, format='NETCDF4', encoding=encoding)
+    print(f'    Climate indices saved → {savepath}')
 
 
 # =============================================================================
@@ -179,6 +273,18 @@ def main() -> None:
         )
 
     # ------------------------------------------------------------------
+    # 2b.  Load climate indices (JJA mean, optional)
+    # ------------------------------------------------------------------
+    print(f'\n[2b] Loading CESM2-LE climate indices (JJA mean) ...')
+    climate_indices = load_climate_indices_jja(START_YEAR, END_YEAR)
+    for key, arr in climate_indices.items():
+        if arr.shape[0] != sst.shape[0] or arr.shape[1] != sst.shape[1]:
+            raise ValueError(
+                f"Climate index '{key}' shape {arr.shape} does not match "
+                f"SST shape ({sst.shape[0]}, {sst.shape[1]})."
+            )
+
+    # ------------------------------------------------------------------
     # 3.  Load land mask
     # ------------------------------------------------------------------
     print('\n[3] Loading land mask ...')
@@ -228,6 +334,22 @@ def main() -> None:
                 'member_groups':   str(MEMBER_GROUPS),
             },
         )
+
+        # Split and save climate indices (same block assignment)
+        if climate_indices:
+            idx_split = {}
+            for idx_name, idx_arr in climate_indices.items():
+                tr, va, te = block_tvt_split(
+                    idx_arr,
+                    split['train_blocks'], split['val_block'],
+                    split['test_block'], N_BLOCKS, BLOCK_SIZE,
+                )
+                idx_split[f'{idx_name}_tr'] = tr
+                idx_split[f'{idx_name}_va'] = va
+                idx_split[f'{idx_name}_te'] = te
+            save_climate_indices_split(
+                idx_split, k, paths.climate_indices_split_path(k),
+            )
 
     print()
     print('=' * 70)
