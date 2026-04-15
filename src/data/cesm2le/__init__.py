@@ -76,6 +76,7 @@ __all__ = [
     'combine_ensemble_members',
     'separate_by_month',
     'process_cesmle_variable',
+    'calculate_annual_mean',
     # Metrics functions
     'calculate_sea_ice_extent',
     'calculate_sea_ice_area',

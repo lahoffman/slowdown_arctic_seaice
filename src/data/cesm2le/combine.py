@@ -399,36 +399,180 @@ def process_cesmle_variable(
 
 
 def calculate_annual_mean(
-    data: np.ndarray,
-    lat: np.ndarray,
-) -> np.ndarray:
+    combined_file: str,
+    output_dir: str,
+    variable: str,
+    member_label: str = 'first50members',
+    start_year: int = 1990,
+    end_year: int = 2100,
+) -> None:
     """
-    Compute the globally-averaged annual mean from ensemble data.
+    Compute the globally-averaged annual mean time series from a combined
+    monthly file and save it as a NetCDF.
+
+    Intended for CAM scalar fields such as TREFHT, where the combined file
+    has shape ``[nens, ntime, nlat, nlon]`` with ``ntime = nyears * 12`` in
+    chronological order.  The function:
+      1. Loads the combined data.
+      2. Retrieves a 1-D latitude axis — first from a raw data chunk in a
+         sibling ``raw/`` directory, then falling back to the standard CESM2
+         f09_g17 CAM grid (``np.linspace(-90, 90, nlat)``).
+      3. Applies cos(lat) weighting to compute a global spatial mean.
+      4. Averages over the 12 months of each year to produce an annual mean.
+      5. Writes a single NetCDF with shape ``[nens, nyears]`` to
+         ``output_dir``.
 
     Parameters
     ----------
-    data : np.ndarray
-        Shape ``[nens, nmonths, nlat, nlon, nyears]``.
-    lat : np.ndarray
-        2-D latitude array ``(nlat, nlon)`` for cos(lat) weighting.
+    combined_file : str
+        Path to combined NetCDF file (output from
+        :func:`combine_ensemble_members`).
+    output_dir : str
+        Directory where the GMT time series NetCDF will be saved.
+    variable : str
+        Variable name, e.g. ``'TREFHT'``.
+    member_label : str, optional
+        Label used in the output filename (default: ``'first50members'``).
+    start_year, end_year : int, optional
+        First / last calendar year covered by the combined file
+        (default: 1990 and 2100).
 
     Returns
     -------
-    np.ndarray
-        Shape ``[nens, nyears]``.
+    None
+        Saves the annual mean GMT time series to ``output_dir``.
     """
-    if data.ndim != 5:
+    # ------------------------------------------------------------------
+    # Load combined data
+    # ------------------------------------------------------------------
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    combined_path = Path(combined_file)
+
+    print(f"Loading combined file: {combined_file}")
+    dataset = nc.Dataset(combined_file, 'r')
+    var_lower = variable.lower()
+    var_upper = variable.upper()
+
+    # Identify the data variable (matches logic used in separate_by_month)
+    if var_lower in dataset.variables:
+        data_var = var_lower
+    elif f'{var_lower}_mon' in dataset.variables:
+        data_var = f'{var_lower}_mon'
+    else:
+        var_names = list(dataset.variables.keys())
+        data_vars = [v for v in var_names
+                     if v not in ['nem', 'nm', 'nx', 'ny', 'nyr',
+                                  'unique_years']]
+        if len(data_vars) == 1:
+            data_var = data_vars[0]
+        else:
+            dataset.close()
+            raise ValueError(
+                f"Could not determine data variable. Available: {var_names}"
+            )
+
+    raw = dataset.variables[data_var][:]
+    if hasattr(raw, 'filled'):
+        data = raw.filled(np.nan).astype(np.float32)
+    else:
+        data = np.array(raw, dtype=np.float32)
+    dataset.close()
+
+    if data.ndim != 4:
         raise ValueError(
-            f"Expected 5-D array [nens, nmonths, nlat, nlon, nyears], got {data.shape}"
+            f"Expected 4-D array [nens, ntime, nlat, nlon], got {data.shape}"
         )
 
-    weights = np.cos(np.deg2rad(lat))
-    weights = weights / np.nansum(weights)
+    nens, ntime, nlat, nlon = data.shape
+    if ntime % 12 != 0:
+        raise ValueError(
+            f"ntime ({ntime}) is not divisible by 12 — cannot compute annual means."
+        )
+    nyears = ntime // 12
 
-    w = weights[np.newaxis, np.newaxis, :, :, np.newaxis]
-    spatial_mean = np.nansum(data * w, axis=(2, 3))  # (nens, nmonths, nyears)
+    # ------------------------------------------------------------------
+    # Get latitude for cos(lat) weighting
+    # Try a raw chunk in a sibling 'raw/' directory first; fall back to
+    # the standard CESM2 f09_g17 CAM grid.
+    # ------------------------------------------------------------------
+    lat_1d = None
+    raw_dir = combined_path.parent.parent / 'raw'
+    if raw_dir.is_dir():
+        raw_candidates = sorted(raw_dir.glob(f'*.{var_upper}.*.nc')) \
+            + sorted(raw_dir.glob(f'*.{var_lower}.*.nc'))
+        for raw_file in raw_candidates:
+            try:
+                ds_raw = nc.Dataset(raw_file, 'r')
+                if 'lat' in ds_raw.variables:
+                    lat_vals = np.array(ds_raw.variables['lat'][:],
+                                        dtype=np.float64)
+                    ds_raw.close()
+                    if lat_vals.ndim == 1 and lat_vals.shape[0] == nlat:
+                        lat_1d = lat_vals
+                        print(f"  Using lat from raw file: {raw_file.name}")
+                        break
+                else:
+                    ds_raw.close()
+            except Exception:
+                continue
 
-    return np.nanmean(spatial_mean, axis=1)  # (nens, nyears)
+    if lat_1d is None:
+        # Standard CESM2 f09_g17 CAM grid: uniform from -90 to 90.
+        lat_1d = np.linspace(-90.0, 90.0, nlat)
+        print(f"  Using standard CESM2 f09_g17 CAM lat grid ({nlat} points)")
+
+    # ------------------------------------------------------------------
+    # cos(lat) weights, normalized to sum to 1 over latitude
+    # ------------------------------------------------------------------
+    weights = np.cos(np.deg2rad(lat_1d))
+    weights = weights / np.nansum(weights)          # shape (nlat,)
+
+    # ------------------------------------------------------------------
+    # Reshape to [nens, nyears, 12, nlat, nlon] and compute GMT
+    # ------------------------------------------------------------------
+    data_r = data.reshape(nens, nyears, 12, nlat, nlon)
+
+    # Weighted mean over lat, then simple mean over lon → [nens, nyears, 12]
+    w = weights[np.newaxis, np.newaxis, np.newaxis, :, np.newaxis]
+    spatial_mean = np.nansum(data_r * w, axis=3)
+    spatial_mean = np.nanmean(spatial_mean, axis=3)
+
+    # Annual mean over the 12 months → [nens, nyears]
+    annual_mean = np.nanmean(spatial_mean, axis=2).astype(np.float32)
+
+    # ------------------------------------------------------------------
+    # Save to NetCDF
+    # ------------------------------------------------------------------
+    years = np.arange(start_year, start_year + nyears)
+    out_var = f'{var_lower}_gmt'
+
+    ds_out = xr.Dataset(
+        {
+            out_var: (('nem', 'nyr'), annual_mean),
+            'years': (('nyr',), years),
+        },
+        coords={
+            'nem': np.arange(nens),
+            'nyr': np.arange(nyears),
+        },
+    )
+    ds_out.attrs['description'] = (
+        f'CESM2-LE {variable} global mean annual time series '
+        f'(cos(lat)-weighted spatial mean, then annual mean)'
+    )
+    ds_out.attrs['member_label'] = member_label
+    ds_out.attrs['time_range'] = f'{start_year}-{start_year + nyears - 1}'
+
+    output_file = Path(output_dir) / (
+        f'{var_lower}_gmt_cesmle_{member_label}_'
+        f'{start_year}-{start_year + nyears - 1}.nc'
+    )
+
+    encoding = {v: {'zlib': True, 'complevel': 4} for v in ds_out.data_vars}
+    ds_out.to_netcdf(output_file, format='NETCDF4', encoding=encoding)
+
+    print(f"  Saved: {output_file}")
+    print(f"  Shape: {annual_mean.shape} [nens, nyears]")
 
 
 if __name__ == '__main__':
