@@ -35,34 +35,59 @@ from sklearn.cluster import KMeans
 # 1. Normalisation
 # =============================================================================
 
-def normalize_map(lrp_map: np.ndarray, method: str = "maxabs") -> np.ndarray:
+def normalize_map(
+    lrp_map: np.ndarray,
+    method: str = "maxabs",
+    percentile: float = 97.0,
+) -> np.ndarray:
     """
-    Normalise a 2-D relevance map.
+    Normalise a 2-D relevance map using percentile-based scaling.
+
+    Values are scaled so that the chosen percentile maps to ±1 (signed) or 1
+    (positive-only), then clipped to enforce bounds.  Using a percentile
+    (default 97th) instead of the absolute maximum prevents a few extreme
+    outlier pixels from compressing the rest of the map to near-zero values,
+    which is important for downstream clustering and visualisation.
 
     Parameters
     ----------
     lrp_map : np.ndarray, shape (nx, ny)
         Composite relevance map.  May contain NaNs (land cells).
     method : {'maxabs', 'max'}
-        - 'maxabs': divide by ``max(|lrp|)`` — works for signed and positive
-          maps, preserves sign, and is consistent with the project's existing
-          LRP-plotting convention.
-        - 'max'   : divide by ``max(lrp)``, useful for positive-only maps.
+        - 'maxabs': normalise by the ``percentile``-th percentile of
+          ``|lrp|``.  Works for signed and positive maps; preserves sign
+          and clips to ``[-1, 1]``.
+        - 'max'   : normalise by the ``percentile``-th percentile of the
+          raw (positive) values.  Useful for positive-only maps; clips to
+          ``[0, 1]``.
+    percentile : float
+        Percentile used to compute the scaling denominator (default 97).
+        Higher values approach the old max-based behaviour; lower values
+        spread more of the map across the [0, 1] / [-1, 1] range.
 
     Returns
     -------
     np.ndarray, same shape as input.
     """
     if method == "maxabs":
-        denom = np.nanmax(np.abs(lrp_map))
+        denom = float(np.nanpercentile(np.abs(lrp_map), percentile))
     elif method == "max":
-        denom = np.nanmax(lrp_map)
+        denom = float(np.nanpercentile(lrp_map, percentile))
     else:
         raise ValueError(f"unknown method: {method!r}")
 
-    if denom is None or not np.isfinite(denom) or denom == 0:
+    if not np.isfinite(denom) or denom == 0:
         return lrp_map.copy()
-    return lrp_map / denom
+
+    normed = lrp_map / denom
+
+    # Clip to enforce bounds
+    if method == "maxabs":
+        normed = np.clip(normed, -1.0, 1.0)
+    else:
+        normed = np.clip(normed, 0.0, 1.0)
+
+    return normed
 
 
 # =============================================================================

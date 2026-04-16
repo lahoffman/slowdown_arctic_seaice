@@ -14,9 +14,38 @@ import netCDF4 as nc
 import xarray as xr
 from pathlib import Path
 from typing import List, Optional
+from configs import paths
 
 from .download import CMIP6_MEMBERS, SMBB_MEMBERS
 
+# =============================================================================
+# Helpers
+# =============================================================================
+
+def _load_lat_lon() -> tuple:
+    """
+    Load CESM2-LE latitude and longitude arrays from the grid file.
+
+    Returns
+    -------
+    lat : np.ndarray  shape (nx,)
+    lon : np.ndarray  shape (ny,)
+    """
+    if not paths.CESM2LE_GRID_FILE.exists():
+        raise FileNotFoundError(
+            f"CESM2-LE grid file not found:\n  {paths.CESM2LE_GRID_FILE}\n"
+            "Update CESM2LE_GRID_FILE in configs/paths.py to point at any "
+            "raw CESM2-LE atmosphere file that contains 'lat' and 'lon'."
+        )
+    with nc.Dataset(paths.CESM2LE_GRID_FILE, 'r') as ds:
+        lat = np.array(ds.variables['lat'][:])
+        lon = np.array(ds.variables['lon'][:])
+    return lat, lon
+
+
+# =============================================================================
+# Combine Functions
+# =============================================================================
 
 def combine_ensemble_members(
     variable: str,
@@ -410,18 +439,6 @@ def calculate_annual_mean(
     Compute the globally-averaged annual mean time series from a combined
     monthly file and save it as a NetCDF.
 
-    Intended for CAM scalar fields such as TREFHT, where the combined file
-    has shape ``[nens, ntime, nlat, nlon]`` with ``ntime = nyears * 12`` in
-    chronological order.  The function:
-      1. Loads the combined data.
-      2. Retrieves a 1-D latitude axis — first from a raw data chunk in a
-         sibling ``raw/`` directory, then falling back to the standard CESM2
-         f09_g17 CAM grid (``np.linspace(-90, 90, nlat)``).
-      3. Applies cos(lat) weighting to compute a global spatial mean.
-      4. Averages over the 12 months of each year to produce an annual mean.
-      5. Writes a single NetCDF with shape ``[nens, nyears]`` to
-         ``output_dir``.
-
     Parameters
     ----------
     combined_file : str
@@ -490,41 +507,13 @@ def calculate_annual_mean(
         )
     nyears = ntime // 12
 
-    # ------------------------------------------------------------------
-    # Get latitude for cos(lat) weighting
-    # Try a raw chunk in a sibling 'raw/' directory first; fall back to
-    # the standard CESM2 f09_g17 CAM grid.
-    # ------------------------------------------------------------------
-    lat_1d = None
-    raw_dir = combined_path.parent.parent / 'raw'
-    if raw_dir.is_dir():
-        raw_candidates = sorted(raw_dir.glob(f'*.{var_upper}.*.nc')) \
-            + sorted(raw_dir.glob(f'*.{var_lower}.*.nc'))
-        for raw_file in raw_candidates:
-            try:
-                ds_raw = nc.Dataset(raw_file, 'r')
-                if 'lat' in ds_raw.variables:
-                    lat_vals = np.array(ds_raw.variables['lat'][:],
-                                        dtype=np.float64)
-                    ds_raw.close()
-                    if lat_vals.ndim == 1 and lat_vals.shape[0] == nlat:
-                        lat_1d = lat_vals
-                        print(f"  Using lat from raw file: {raw_file.name}")
-                        break
-                else:
-                    ds_raw.close()
-            except Exception:
-                continue
-
-    if lat_1d is None:
-        # Standard CESM2 f09_g17 CAM grid: uniform from -90 to 90.
-        lat_1d = np.linspace(-90.0, 90.0, nlat)
-        print(f"  Using standard CESM2 f09_g17 CAM lat grid ({nlat} points)")
+    
 
     # ------------------------------------------------------------------
     # cos(lat) weights, normalized to sum to 1 over latitude
     # ------------------------------------------------------------------
-    weights = np.cos(np.deg2rad(lat_1d))
+    lat, _ = _load_lat_lon()
+    weights = np.cos(np.deg2rad(lat))
     weights = weights / np.nansum(weights)          # shape (nlat,)
 
     # ------------------------------------------------------------------
