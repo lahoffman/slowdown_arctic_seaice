@@ -74,42 +74,6 @@ FOCAL_ALPHA = 0.75
 # Loss functions
 # =============================================================================
 
-def focal_loss(gamma: float = FOCAL_GAMMA, alpha: float = FOCAL_ALPHA):
-    """
-    Focal loss for binary classification, compatible with Keras model.compile.
-
-    Focal loss down-weights well-classified examples so the model focuses
-    training effort on hard, misclassified samples — useful when the slowdown
-    class is a small fraction of the training data.
-
-        FL(p_t) = −α (1 − p_t)^γ log(p_t)
-
-    Parameters
-    ----------
-    gamma : float
-        Focusing parameter (default: 2.0).  γ=0 reduces to binary cross-entropy.
-    alpha : float
-        Weighting factor for the positive class (default: 0.75).
-
-    Returns
-    -------
-    Callable
-        A Keras-compatible loss function ``focal_loss_fixed(y_true, y_pred)``.
-
-    Examples
-    --------
-    >>> model.compile(optimizer='adam', loss=focal_loss(gamma=2.0, alpha=0.75))
-    """
-    def focal_loss_fixed(y_true, y_pred):
-        y_true  = K.cast(y_true, dtype=tf.float32)
-        y_pred  = K.clip(y_pred, K.epsilon(), 1.0 - K.epsilon())
-        ce      = -y_true * K.log(y_pred)
-        loss    = alpha * K.pow(1.0 - y_pred, gamma) * ce
-        return K.sum(loss, axis=-1)
-
-    return focal_loss_fixed
-
-
 def norm_root_mean_squared_error(y_true, y_pred):
     """
     Normalised root mean squared error (NRMSE), Keras metric-compatible.
