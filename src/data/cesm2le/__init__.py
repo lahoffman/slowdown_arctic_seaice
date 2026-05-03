@@ -10,6 +10,7 @@ Modules:
 - regrid:          Regrid AICE to SST grid
 - climate_indices: Compute ENSO (Niño3.4, CP/TP) and IPO indices
 - slowdowns:       Classify decadal trends as slowdowns or RILES events
+- slowdowns_gmt:   Classify GMT decadal trends as slowdowns
 
 Author: Lauren Hoffman
 Email: lhoffma2@ucsc.edu
@@ -68,6 +69,15 @@ from .slowdowns import (
     compute_cesm2le_slowdowns,
 )
 
+from .slowdowns_gmt import (
+    load_gmt_yearly,
+    compute_gmt_slowdown_fraction,
+    compute_gmt_model_threshold,
+    classify_gmt_slowdowns,
+    save_gmt_slowdown_events,
+    compute_cesm2le_gmt_slowdowns,
+)
+
 __all__ = [
     # Download functions
     'download_raw_data',
@@ -106,6 +116,13 @@ __all__ = [
     'classify_riles',
     'save_slowdown_events',
     'compute_cesm2le_slowdowns',
+    # GMT slowdown functions
+    'load_gmt_yearly',
+    'compute_gmt_slowdown_fraction',
+    'compute_gmt_model_threshold',
+    'classify_gmt_slowdowns',
+    'save_gmt_slowdown_events',
+    'compute_cesm2le_gmt_slowdowns',
     # Constants
     'CMIP6_MEMBERS',
     'SMBB_MEMBERS',

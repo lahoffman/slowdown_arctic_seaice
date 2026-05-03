@@ -164,6 +164,24 @@ def cesm2le_slowdown_file(variable: str = 'sie', month: str = 'SEP',
     )
 
 
+def cesm2le_gmt_slowdown_file(start_year: int = 1990,
+                               end_year: int = 2100) -> Path:
+    """Path to the GMT slowdown classification NetCDF.
+
+    The file is produced by scripts/02_cesm2le_slowdowns_gmt.py and contains
+    the binary slowdown mask (nens × nyr) plus ensemble-mean GMT trends and
+    thresholds.
+
+    Parameters
+    ----------
+    start_year, end_year : int
+        Year range encoded in the filename (default: 1990–2100).
+    """
+    return CESM2LE_SLOWDOWNS_DIR / (
+        f'cesm2le_gmt_slowdown_{start_year}-{end_year}.nc'
+    )
+
+
 # =============================================================================
 # RESULTS  —  models, XAI, figures
 # =============================================================================
