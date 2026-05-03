@@ -39,7 +39,7 @@ except ImportError:
 
 from sklearn.utils.class_weight import compute_class_weight
 
-from .model import compute_metrics, METRIC_NAMES, focal_loss, build_cnn
+from .model import compute_metrics, METRIC_NAMES, build_cnn
 
 
 # =============================================================================
