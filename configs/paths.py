@@ -98,7 +98,12 @@ ERSST_NINO34       = ERSST_DIR / 'ersst_nino34_index.nc'
 ERSST_ENSO_CPTP    = ERSST_DIR / 'ersst_enso_cptp_indices.nc'
 ERSST_IPO          = ERSST_DIR / 'ersst_ipo_index.nc'
 ERSST_ARCTIC_SST   = ERSST_DIR / 'ersstv5_arctic_sst_index.nc'
-ERSST_TESTING      = ERSST_DIR / 'ersstv5_testing.nc'
+ERSST_TESTING      = ERSST_DIR / 'ersstv5_testing_forced_ensmean.nc'
+
+
+def ersst_testing_file(forced_method: str = 'ensmean') -> Path:
+    """Path to the ERSST testing NetCDF for a given forced-removal method."""
+    return ERSST_DIR / f'ersstv5_testing_forced_{forced_method}.nc'
 
 
 # =============================================================================
@@ -131,6 +136,9 @@ CESM2LE_SST_MONTHLY = {
     'first50': str(CESM2LE_SST_DIR / 'mon' / 'sst_cesmle_first50members_mon_{month}_199001-210012.nc'),
     'last50':  str(CESM2LE_SST_DIR / 'mon' / 'sst_cesmle_last50members_mon_{month}_199001-210012.nc'),
 }
+
+# Ensemble-mean JJA SST (the forced response, output of src.data.cesm2le.forced)
+CESM2LE_ENSMEAN_JJA = CESM2LE_DIR / 'forced' / 'cesm2le_ensmean_jja_sst.nc'
 
 # SIE trend data (output of CESM2-LE processing pipeline)
 CESM2LE_SIE_TRENDS = CESM2LE_DIR / 'sie_cesmle_linear_decadal_trend_monthly_1990-2100.nc'
@@ -228,6 +236,11 @@ def attribution_path(split_idx: int, run_idx: int) -> Path:
 def metrics_path(split_idx: int) -> Path:
     """Path to a saved metrics Dataset NetCDF for a given split."""
     return RESULTS_DIR / 'metrics' / f'cnn_jja_metrics_split{split_idx}.nc'
+
+
+def ersst_predictions_dir(forced_method: str = 'ensmean') -> Path:
+    """Directory for CNN predictions on ERSSTv5, tagged by forced method."""
+    return RESULTS_DIR / 'predictions' / 'ersst' / f'forced_{forced_method}'
 
 
 def climate_indices_split_path(split_idx: int) -> Path:

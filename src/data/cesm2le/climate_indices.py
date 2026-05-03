@@ -1284,7 +1284,7 @@ def save_arctic_sst_forced_em(
     ds.to_netcdf(output_file, format="NETCDF4", encoding=encoding)
 
     print(f"✓ Saved Arctic SST forced ensemble mean to: {output_file}")
-    
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Example usage
