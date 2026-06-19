@@ -1,205 +1,114 @@
 # Setup Guide
 
-## Project Structure
+How to install the environment, point the code at your data, and verify the
+setup. For the analysis steps themselves, see [`workflow.md`](workflow.md).
 
-Your repository is now organized as a standard Python project:
+## 1. Install the environment
 
-```
-slowdown_arctic_seaice/
-├── configs/                    # ⭐ Configuration (CHANGE PATHS HERE)
-│   ├── paths.py               # Data paths
-│   ├── model.py               # Model architecture
-│   └── training.py            # Training hyperparameters
-│
-├── src/                        # Library code (functions only - import these)
-│   ├── data/                  # Data loading, preprocessing, climate indices
-│   ├── models/                # Model building, training
-│   ├── xai/                   # Explainable AI (LRP)
-│   └── visualization/         # Plotting functions
-│
-├── scripts/                    # Workflow scripts (run these)
-│   ├── 01_download_data.py    # Check/download data
-│   ├── 02_preprocess_data.py  # Create TVT splits
-│   ├── 03_train_models.py     # Train CNNs
-│   ├── 04_compute_xai.py      # Compute LRP
-│   └── 05_generate_figures.py # Create plots
-│
-├── notebooks/                  # Jupyter notebooks (for exploration)
-├── docs/                       # Documentation
-├── tests/                      # Unit tests
-│
-├── results/                    # All outputs (gitignored)
-│   ├── data/                  # Processed TVT splits
-│   ├── models/                # Trained models (.h5)
-│   ├── attributions/          # LRP maps (.nc)
-│   └── figures/               # Publication figures
-│
-└── [OLD - kept for reference]
-    ├── data_download/         # Original scripts
-    ├── data_processing/       # Original scripts
-    ├── figures/               # Original scripts
-    └── run_ml_xai/            # Original scripts
+TensorFlow 2.14 and `innvestigate` (the LRP library) pin most of the stack, so
+conda is the recommended path:
+
+```bash
+conda env create -f environment.yml
+conda activate slowdown-seaice
 ```
 
-## Key Concepts
+`environment.yml` already runs `pip install -e .`, so the package is installed
+in editable mode and `configs` / `src` are importable from anywhere.
 
-### 1. Configuration (`configs/`)
-**All settings in one place**
+### Alternative: pip / venv
 
-- `paths.py` - **⭐ Change your data paths here!**
-- `model.py` - CNN architecture
-- `training.py` - Hyperparameters
+```bash
+python -m venv env && source env/bin/activate
+pip install -e .            # core dependencies
+pip install -e ".[dev]"     # + pytest, black, flake8, jupyter
+```
 
-### 2. Library (`src/`)
-**Reusable functions - import these in your scripts**
+`requirements.txt` lists the same pinned dependencies if you prefer
+`pip install -r requirements.txt`. TensorFlow can be awkward to install via pip —
+conda is more reliable.
+
+> **Note on imports.** The package installs as `slowdown` (mapping `src/` →
+> `slowdown`), but the workflow scripts add the repo root to `sys.path` and
+> import as `from configs import paths` and `from src.data... import ...`. Run
+> scripts from the repo root and both styles work.
+
+## 2. Point the code at your data
+
+All paths are derived from a single environment variable, `SLOWDOWN_DATA_ROOT`.
+This is the only thing that changes between machines — you should not edit
+`configs/paths.py` for routine use.
+
+```bash
+# macOS — add to ~/.zshrc to persist
+export SLOWDOWN_DATA_ROOT=/Users/you/data/slowdowns
+
+# Linux / remote server — add to ~/.bashrc
+export SLOWDOWN_DATA_ROOT=/cofast/you/slowdowns
+```
+
+If the variable is unset, `configs/paths.py` falls back to a list of known
+local paths; if none exist it raises an error on purpose, so missing data is
+caught early rather than written to the wrong place.
+
+### Data directory layout
+
+Everything (inputs and outputs) lives under `SLOWDOWN_DATA_ROOT`, organised by
+dataset. `configs/paths.py` creates these directories automatically:
+
+```
+DATA_ROOT/
+├── nsidc/        raw Sea Ice Index Excel file + processed slowdown outputs
+├── ersst/        raw sst.mnmean.nc + regridded SST + climate indices
+├── cesm2le/      downloaded ensemble files + monthly SST/AICE/TREF + slowdowns
+└── results/      models, attributions, predictions, metrics, figures, logs
+```
+
+The only raw input you must supply manually is the NSIDC Sea Ice Index file:
+
+```
+DATA_ROOT/nsidc/Sea_Ice_Index_Monthly_Data_with_Statistics_G02135_v3.0.xlsx
+```
+
+CESM2-LE and ERSSTv5 are downloaded by the pipeline (see
+[`workflow.md`](workflow.md)).
+
+## 3. Configuration files
+
+`configs/` holds everything tunable:
+
+- **`paths.py`** — every input/output path plus helper functions like
+  `tvt_split_path(k)`, `model_path(split, run)`, and `attribution_path(...)`.
+  Add new paths here rather than hard-coding them.
+- **`model.py`** — CNN architecture (`CNN_CONFIG`) and ensemble settings
+  (`ENSEMBLE_CONFIG`: 100 members, 9 splits).
+- **`training.py`** — training hyperparameters (`TRAINING_CONFIG`), the
+  train/val/test split ratios (`SPLIT_CONFIG`), LRP settings (`XAI_CONFIG`),
+  climate-index analysis parameters (`ANALYSIS_CONFIG`), season definitions, and
+  plotting defaults.
+
+Import them with:
 
 ```python
-# In your scripts:
-from src.data import load_netcdf, compute_nino34_index
-from src.models import build_cnn_model, train_model
-from src.xai import compute_lrp_analysis
-from src.visualization import plot_map
+from configs import paths
+import configs.training as training
+import configs.model as model
 ```
 
-### 3. Workflow (`scripts/`)
-**Executable scripts - run these**
+## 4. Verify the setup
 
 ```bash
-python scripts/01_download_data.py
-python scripts/02_preprocess_data.py
-python scripts/03_train_models.py
-python scripts/04_compute_xai.py
-python scripts/05_generate_figures.py
+# Confirm the package imports and paths resolve
+python -c "from configs import paths; print('DATA_ROOT =', paths.DATA_ROOT)"
+
+# Run the test suite (model + data tests)
+pytest
 ```
 
-## Setup Steps
+If the first command prints your data root without raising, the environment
+and `SLOWDOWN_DATA_ROOT` are configured correctly.
 
-### 1. Create Environment
+## Next steps
 
-```bash
-conda env create -f environment-ml.yml
-conda activate slowdown-ml
-```
-
-### 2. Install Package
-
-```bash
-pip install -e .
-```
-
-This makes `src/` importable from anywhere.
-
-### 3. Configure Paths
-
-**MOST IMPORTANT STEP!**
-
-Edit `configs/paths.py`:
-
-```python
-# Change this line to your data location:
-if os.path.exists('/your/local/path'):
-    ROOT_DATA_PATH = Path('/your/local/path')
-```
-
-### 4. Verify Setup
-
-```bash
-python scripts/01_download_data.py
-```
-
-This checks if required data files exist.
-
-## Workflow
-
-### Standard Workflow
-
-```bash
-# 1. Preprocess (create 9 TVT splits)
-python scripts/02_preprocess_data.py
-
-# 2. Train models on all splits
-python scripts/03_train_models.py
-
-# 3. Compute XAI attributions
-python scripts/04_compute_xai.py
-
-# 4. Generate figures
-python scripts/05_generate_figures.py
-```
-
-### Test on Single Split
-
-```bash
-# Train just split 0
-python scripts/03_train_models.py --split 0
-
-# Compute XAI for split 0
-python scripts/04_compute_xai.py --split 0
-```
-
-## Implementation
-
-The workflow scripts are templates. You need to:
-
-1. **Implement data loading**:
-   - In `scripts/02_preprocess_data.py`
-   - Load your CESM2-LE SST data
-   - Load SIE labels
-
-2. **Implement model training**:
-   - In `scripts/03_train_models.py`
-   - Extract X_train, y_train from loaded data
-   - Call training functions
-
-3. **Implement XAI**:
-   - In `scripts/04_compute_xai.py`
-   - Load test data
-   - Compute and save LRP
-
-4. **Implement plotting**:
-   - In `scripts/05_generate_figures.py`
-   - Load results
-   - Create publication figures
-
-## Migrating Old Code
-
-Your old code is in:
-- `data_download/`
-- `data_processing/`
-- `figures/`
-- `run_ml_xai/`
-
-To migrate:
-
-1. **Extract functions** → Move to appropriate `src/` module
-2. **Extract scripts** → Adapt into workflow scripts
-3. **Extract paths** → Move to `configs/paths.py`
-4. **Extract hyperparameters** → Move to `configs/model.py` or `configs/training.py`
-
-## Benefits
-
-**Before**:
-```
-run_ml_xai/M1_EI_cnn_sst_seasonal_global.py  (400 lines, hardcoded paths)
-run_ml_xai/M2_EI_lrpz_sst_seasonal_global.py (300 lines, hardcoded paths)
-```
-
-**After**:
-```
-configs/paths.py           (centralized paths)
-configs/training.py        (centralized hyperparameters)
-src/models/training.py     (reusable functions)
-scripts/03_train_models.py (workflow script - 80 lines)
-scripts/04_compute_xai.py  (workflow script - 70 lines)
-```
-
-## Questions?
-
-See:
-- `README.md` - Project overview
-- `docs/workflow.md` - Detailed workflow guide
-- `configs/` - All configuration files
-
----
-
-**Get started**: Edit `configs/paths.py`, then run `python scripts/01_download_data.py`
+Continue to [`workflow.md`](workflow.md) to run the analysis, starting with the
+preprocessing scripts.
