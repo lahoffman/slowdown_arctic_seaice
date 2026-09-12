@@ -64,11 +64,11 @@ def fig_1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
         # kept narrow (12 in) so that, scaled to the GRL column, the fonts stay legible.
         schematic = _trim_white(schematic)
         w = 12.0
-        h_top = w * schematic.shape[0] / schematic.shape[1] * 0.7    # schematic drawn at ~70 % width
+        h_top = w * schematic.shape[0] / schematic.shape[1] * 0.92   # schematic drawn at ~92 % width
         fig = plt.figure(figsize=(w, h_top + 4.6))
         gs = fig.add_gridspec(2, 2, height_ratios=[h_top, 4.2], hspace=0.28, wspace=0.22)
         ax_a = fig.add_subplot(gs[0, :]); ax_a.imshow(schematic); ax_a.axis("off")
-        panel_label(ax_a, "(a)", x=-0.02, y=0.98)
+        panel_label(ax_a, "(a)", x=0.04, y=1.0)                      # above the image's top-left corner
         ax_b, ax_c = fig.add_subplot(gs[1, 0]), fig.add_subplot(gs[1, 1])
         lb, lc = "(b)", "(c)"
     else:
