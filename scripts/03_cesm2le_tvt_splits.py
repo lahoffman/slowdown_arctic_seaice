@@ -270,6 +270,7 @@ def parse_args() -> argparse.Namespace:
                         help='Zero the SST anomaly where JJA ice concentration > 0.15 '
                              '(needs 02_cesm2le_icemask.py; revision step 1.6).')
     parser.add_argument('--ice-threshold', type=float, default=0.15)
+    parser.add_argument('--no-fig', action='store_true', help='Skip the open-water check figure.')
     parser.add_argument('--tag', default=None,
                         help='Configuration tag → outputs go to tvt_splits/<tag>/ '
                              '(default: untagged original location).')
@@ -395,9 +396,19 @@ def main(args: argparse.Namespace) -> None:
         ice = load_icemask(paths.CESM2LE_ICEMASK_JJA, sst_years - args.sst_lag, args.ice_threshold)
         with nc.Dataset(paths.CESM2LE_GRID_FILE) as g:
             arctic_rows = np.array(g['lat'][:]) >= 65
+        sst_before = sst if not args.no_fig else None
         sst = apply_openwater(sst, ice)
         print(f'    open-water mask applied: {ice.mean():.3f} of all cells, '
               f'{ice[:, :, arctic_rows, :].mean():.3f} of cells north of 65°N set to zero anomaly')
+        if not args.no_fig:
+            from src.plotting import icemask as plot_im, style as st
+            st.paper_rc()
+            with nc.Dataset(paths.CESM2LE_GRID_FILE) as g:
+                glat, glon = np.array(g['lat'][:]), np.array(g['lon'][:])
+            out_png = paths.FIGURES_DIR / 'diagnostics' / f'openwater_check_{tag or "untagged"}.png'
+            plot_im.plot_openwater_check(sst_before, sst, ice, glat, glon, sst_years - args.sst_lag,
+                                         out_png, member=6, year=2010, landmask=load_landmask())
+            del sst_before
 
     # ------------------------------------------------------------------
     # 2.  Load September slowdown labels

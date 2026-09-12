@@ -47,9 +47,9 @@ def nearest_index_map(src_lat: np.ndarray, src_lon: np.ndarray,
 
 
 def load_cice_grid(grid_file: Path) -> Tuple[np.ndarray, np.ndarray]:
-    """TLAT, TLONG (nj, ni) from any raw CICE file."""
+    """TLAT, TLON (nj, ni) from a raw CESM2 CICE history file."""
     with nc.Dataset(grid_file) as ds:
-        return np.array(ds["TLAT"][:], float), np.array(ds["TLONG"][:], float)
+        return np.array(ds["TLAT"][:], float), np.array(ds["TLON"][:], float)
 
 
 def load_jja_aice(aice_monthly_template: Dict[str, str], member_groups: List[str],
@@ -99,7 +99,7 @@ def build_icemask(aice_monthly_template: Dict[str, str], member_groups: List[str
     )
     ds.attrs.update(description="JJA-mean CESM2-LE sea-ice concentration, nearest-neighbour on the "
                                 "atmosphere grid; icemask = concentration > threshold",
-                    threshold=float(threshold), regrid="nearest neighbour from CICE TLAT/TLONG")
+                    threshold=float(threshold), regrid="nearest neighbour from CICE TLAT/TLON")
     return ds
 
 
