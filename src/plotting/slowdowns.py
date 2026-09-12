@@ -297,3 +297,45 @@ def plot_sigma_mode_comparison(ds_pooled: xr.Dataset, ds_yearly: xr.Dataset, sie
     fig.suptitle(f"Relative labels — pooled vs year-dependent σ (window {int(ds_pooled.attrs['window'])} yr, "
                  f"demean={ds_pooled.attrs['demean']})")
     st.save(fig, out_png)
+
+
+def sigma_panel(ax, ds: xr.Dataset, pool_years: Tuple[int, int], cap_year: int, xmax: int = 2100,
+                smooth: int = 5) -> None:
+    """Member spread of the trend anomaly by onset year, with the pooled σ, pooling window and onset cap."""
+    tyrs, anom = ds["nyr"].values.astype(int), ds["trend_anom"].values
+    raw = np.nanstd(anom, axis=0)
+    sm = np.convolve(np.pad(raw, smooth // 2, mode="edge"), np.ones(smooth) / smooth, mode="valid")
+    ax.plot(tyrs, raw, color=st.MUTED, lw=1, label="spread of member trends, σ(t)")
+    ax.plot(tyrs, sm, color=st.INK, lw=1.8, label=f"{smooth}-yr running mean")
+    ax.plot(tyrs, ds["sigma"].values, color=st.C_ALL, lw=2, ls="--",
+            label=f"pooled σ = {float(ds['sigma'][0]):.3f} ({pool_years[0]}–{pool_years[1]})")
+    ax.axvspan(pool_years[0], pool_years[1], color=st.GRID, alpha=0.5, zorder=0)
+    ax.axvline(cap_year, color=st.INK, lw=1, ls="-.")
+    ymax = 1.6 * float(np.nanmax(raw))                    # headroom so the legend never sits on the data
+    ax.set_xlim(tyrs[0], xmax); ax.set_ylim(0, ymax)
+    ax.text(cap_year + 1, 0.02 * ymax, f"onset cap {cap_year}",
+            fontsize=plt.rcParams["legend.fontsize"], va="bottom")
+    ax.set_ylabel("spread of trend anomalies\n[M km² yr⁻¹]")
+    ax.legend(frameon=False, loc="upper right", ncol=1)
+    st.tidy(ax)
+
+
+def base_rate_panel(ax, ds: xr.Dataset, original: xr.Dataset = None,
+                    pool_years: Tuple[int, int] = (1990, 2040), cap_year: int = 2030,
+                    xmax: int = 2100) -> None:
+    """Fraction of members flagged by onset year: relative labels (all / per group) vs the original labels."""
+    tyrs, lab = ds["nyr"].values.astype(int), ds["slowdown"].values
+    if original is not None:
+        o = original["slowdown"].sel(nyr=slice(tyrs[0], xmax))
+        ax.plot(o["nyr"].values, o.values.mean(0), color=st.C_ORIG, lw=2.2, label="original labels (all members)")
+    freq = frequency_by_year(lab, tyrs)
+    ax.plot(tyrs, freq["all"], color=st.C_ALL, lw=2.2, label="relative — all members")
+    if "cmip6" in freq:
+        ax.plot(tyrs, freq["cmip6"], color=st.C_CMIP6, lw=1.4, label="relative — CMIP6-BB (0–49)")
+        ax.plot(tyrs, freq["smbb"], color=st.C_SMBB, lw=1.4, label="relative — SMBB (50–99)")
+    ax.axvspan(pool_years[0], pool_years[1], color=st.GRID, alpha=0.5, zorder=0)
+    ax.axvline(cap_year, color=st.INK, lw=1, ls="-.")
+    ax.set_xlim(tyrs[0], xmax); ax.set_ylim(0, 0.9)
+    ax.set_ylabel("fraction of members\nflagged slowdown"); ax.set_xlabel("onset year of trend window")
+    ax.legend(frameon=False, loc="upper right", ncol=2)
+    st.tidy(ax)

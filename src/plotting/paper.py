@@ -8,16 +8,18 @@ observations); nothing here touches files.
 
 Main text                               Supplement
   fig_1  schematic + NSIDC + member       fig_s1  slowdown definition (6 panels)
-  fig_2  TP composite: SST + LRP          fig_s2  label distributions (8 panels)
-  fig_3  P(TP | phase), test              fig_s3  baselines vs CNN skill
-  fig_4  observations: votes + indices    fig_s4  PR curve / threshold
-                                          fig_s5  confusion matrices
-                                          fig_s6  metric strip, all CNNs
-                                          fig_s7  test-member timeline
-                                          fig_s8  SST composites: all vs CNN-filtered
-                                          fig_s9/s10/s11  FP / TN / FN composites
-                                          fig_s12 P(event | phase), train, all vs TP
-                                          fig_s13 SIE vs GMT slowdown counts
+  fig_2  TP composite: SST + LRP          fig_s2  pooled σ and onset cap (2 panels)
+  fig_3  P(TP | phase), test              fig_s3  forced response of the two forcing groups
+  fig_4  observations: votes + indices    fig_s4  label distributions (8 panels)
+                                          fig_s5  baselines vs CNN skill
+                                          fig_s6  PR curve / threshold
+                                          fig_s7  confusion matrices
+                                          fig_s8  metric strip, all CNNs
+                                          fig_s9  test-member timeline
+                                          fig_s10 SST composites: all vs CNN-filtered
+                                          fig_s11/s12/s13  FP / TN / FN composites
+                                          fig_s14 P(event | phase), train, all vs TP
+                                          fig_s15 SIE vs GMT slowdown counts
 Extras: fig_phase_all, fig_regional_relevance, fig_sie_gmt_joint, fig_learning_curve.
 """
 
@@ -31,6 +33,7 @@ import xarray as xr
 from . import style as st
 from . import slowdowns as sd
 from . import maps, performance as perf, conditional, observations as obs
+from . import forced as fr
 from .style import plt, panel_label
 
 
@@ -71,7 +74,7 @@ def fig_1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
 
 
 # =============================================================================
-# Figure 2 / S9–S11 — composites
+# Figure 2 / S11–S13 — composites
 # =============================================================================
 
 def fig_2(comp: Dict, signed: bool = True, smooth: Optional[float] = None,
@@ -85,10 +88,10 @@ def fig_2(comp: Dict, signed: bool = True, smooth: Optional[float] = None,
                                signed=signed, smooth_lrp=smooth, boxes=boxes)
 
 
-fig_s9 = fig_s10 = fig_s11 = fig_2   # FP / TN / FN: same layout, different scenario
+fig_s11 = fig_s12 = fig_s13 = fig_2   # FP / TN / FN: same layout, different scenario
 
 
-def fig_s8(comps: Dict[str, Dict]) -> plt.Figure:
+def fig_s10(comps: Dict[str, Dict]) -> plt.Figure:
     """SST composites: (a) all slowdowns (b) TP (c) all non-slowdowns (d) TN."""
     order = ["ALL_SLOW", "TP", "ALL_NONSLOW", "TN"]
     c0 = comps[order[0]]
@@ -113,7 +116,7 @@ def fig_regional_relevance(comp: Dict) -> plt.Figure:
 
 
 # =============================================================================
-# Figure 3 / S12 — event dependence on index phase
+# Figure 3 / S14 — event dependence on index phase
 # =============================================================================
 
 def fig_3(summaries: Sequence[Dict]) -> plt.Figure:
@@ -121,7 +124,7 @@ def fig_3(summaries: Sequence[Dict]) -> plt.Figure:
     return conditional.phase_figure(summaries, show=("tp",), ylabel="P(TP slowdown | phase)")
 
 
-def fig_s12(summaries: Sequence[Dict]) -> plt.Figure:
+def fig_s14(summaries: Sequence[Dict]) -> plt.Figure:
     """All slowdowns vs TP slowdowns by phase (training data)."""
     return conditional.phase_figure(summaries, show=("all", "tp"), ylabel="P(event | phase)")
 
@@ -230,10 +233,46 @@ def fig_s1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
 
 
 # =============================================================================
-# Figure S2 — label distributions
+# Figure S2 — pooled σ and onset cap (why the two free parameters are what they are)
 # =============================================================================
 
-def fig_s2(sie: np.ndarray, years: np.ndarray, labels: xr.Dataset, split_year: int = 2040,
+def fig_s2(labels: xr.Dataset, original: Optional[xr.Dataset] = None, cap_year: int = 2030,
+           xmax: int = 2100) -> plt.Figure:
+    """
+    (a) member spread of the decadal-trend anomaly by onset year vs the pooled σ;
+    (b) fraction of members flagged by onset year, relative vs original labels.
+    """
+    pool = tuple(int(v) for v in str(labels.attrs.get("pool_years", "(1990, 2040)")).strip("()").split(","))
+    fig, (axa, axb) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+    sd.sigma_panel(axa, labels, pool, cap_year, xmax)
+    sd.base_rate_panel(axb, labels, original, pool, cap_year, xmax)
+    panel_label(axa, "(a)"); panel_label(axb, "(b)")
+    return fig
+
+
+# =============================================================================
+# Figure S3 — forced response of the two forcing groups
+# =============================================================================
+
+def fig_s3(groupmean: np.ndarray, names: Sequence[str], years: np.ndarray, lat: np.ndarray,
+           lon: np.ndarray, landmask: Optional[np.ndarray] = None,
+           period: tuple = (2000, 2020)) -> plt.Figure:
+    """(a) SMBB − CMIP6 forced JJA SST map over ``period``; (b) its Arctic mean through time."""
+    fig = plt.figure(figsize=(11, 9.5))
+    gs = fig.add_gridspec(2, 1, height_ratios=[1.6, 1])
+    axa = maps.map_axes(fig, gs[0])
+    fr.diff_map_panel(axa, groupmean, names, years, lat, lon, period, landmask)
+    axb = fig.add_subplot(gs[1])
+    fr.arctic_diff_panel(axb, groupmean, names, years, lat, period, landmask)
+    panel_label(axa, "(a)"); panel_label(axb, "(b)")
+    return fig
+
+
+# =============================================================================
+# Figure S4 — label distributions
+# =============================================================================
+
+def fig_s4(sie: np.ndarray, years: np.ndarray, labels: xr.Dataset, split_year: int = 2040,
            varlabel="SEP SIE") -> plt.Figure:
     """Left column: all onset years. Right column: onsets before ``split_year``."""
     tyrs = labels["nyr"].values.astype(int)
@@ -252,39 +291,39 @@ def fig_s2(sie: np.ndarray, years: np.ndarray, labels: xr.Dataset, split_year: i
 
 
 # =============================================================================
-# Figure S3 — scalar baselines vs CNN
+# Figure S5 — scalar baselines vs CNN
 # =============================================================================
 
-def fig_s3(stacked: xr.Dataset) -> plt.Figure:
+def fig_s5(stacked: xr.Dataset) -> plt.Figure:
     """Per-split test skill of the logistic/prior baselines and the CNN (07_baselines.py)."""
     from .baselines import plot_summary
     return plot_summary(stacked, out_png=None)
 
 
 # =============================================================================
-# Figures S4–S7 — model performance
+# Figures S6–S9 — model performance
 # =============================================================================
 
-def fig_s4(y_true, y_score) -> plt.Figure:
+def fig_s6(y_true, y_score) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(7, 4.2))
     perf.pr_curve(ax, y_true, y_score)
     return fig
 
 
-def fig_s5(y_true: Dict, y_score: Dict, threshold: float) -> plt.Figure:
+def fig_s7(y_true: Dict, y_score: Dict, threshold: float) -> plt.Figure:
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     for ax, part, lab in zip(axes, ("train", "test"), "ab"):
         perf.confusion_panel(ax, y_true[part], y_score[part], threshold, f"({lab})")
     return fig
 
 
-def fig_s6(values: Dict[str, np.ndarray]) -> plt.Figure:
+def fig_s8(values: Dict[str, np.ndarray]) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(8, 4.5))
     perf.metric_strip(ax, values)
     return fig
 
 
-def fig_s7(y_true, y_pred, years, member_labels) -> plt.Figure:
+def fig_s9(y_true, y_pred, years, member_labels) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(9, 5))
     perf.member_timeline(ax, y_true, y_pred, years, member_labels)
     return fig
@@ -297,10 +336,10 @@ def fig_learning_curve(history: Dict) -> plt.Figure:
 
 
 # =============================================================================
-# Figure S13 — SIE vs GMT slowdowns
+# Figure S15 — SIE vs GMT slowdowns
 # =============================================================================
 
-def fig_s13(years, sie_count, gmt_count, both_count) -> plt.Figure:
+def fig_s15(years, sie_count, gmt_count, both_count) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(10, 4.5))
     sd.sie_gmt_counts(ax, years, sie_count, gmt_count, both_count)
     return fig

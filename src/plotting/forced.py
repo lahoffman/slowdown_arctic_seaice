@@ -28,6 +28,37 @@ def arctic_mean(field: np.ndarray, lat: np.ndarray, lat_min: float = ARCTIC_LAT)
     return num / den
 
 
+def mask_land(field: np.ndarray, landmask: Optional[np.ndarray]) -> np.ndarray:
+    """NaN out land cells (landmask == 1) on the trailing (lat, lon) axes."""
+    if landmask is None:
+        return field
+    return np.where(np.broadcast_to(landmask, field.shape) == 1, np.nan, field)
+
+
+def diff_map_panel(ax, groupmean, names, years, lat, lon, period=(2000, 2020), landmask=None,
+                   cbar_label=None):
+    """Map of forced JJA SST, SMBB − CMIP6, averaged over ``period``; returns the mappable."""
+    i_c, i_s = names.index("cmip6"), names.index("smbb")
+    sel = (years >= period[0]) & (years <= period[1])
+    diff_map = np.nanmean(mask_land(groupmean[i_s] - groupmean[i_c], landmask)[sel], axis=0)
+    vmax = float(np.nanpercentile(np.abs(diff_map), 99))
+    label = cbar_label or f"forced JJA SST, SMBB − CMIP6 ({period[0]}–{period[1]}) [°C]"
+    return maps.global_map(ax, lon, lat, diff_map, st.CMAP_SST, -vmax, vmax, label)
+
+
+def arctic_diff_panel(ax, groupmean, names, years, lat, period=(2000, 2020), landmask=None):
+    """Arctic-mean (>65°N) forced difference SMBB − CMIP6 through time."""
+    i_c, i_s = names.index("cmip6"), names.index("smbb")
+    d = arctic_mean(mask_land(groupmean[i_s] - groupmean[i_c], landmask), lat)
+    ax.axhline(0, color=st.MUTED, lw=0.8)
+    ax.fill_between(years, 0, d, color=st.C_SMBB, alpha=0.35)
+    ax.plot(years, d, color=st.INK)
+    ax.axvspan(*period, color=st.GRID, zorder=0)
+    ax.set_xlim(years[0], years[-1])
+    ax.set_xlabel("year"); ax.set_ylabel("Arctic (>65°N) JJA SST,\nSMBB − CMIP6 [°C]")
+    st.tidy(ax)
+
+
 def plot_group_forced_difference(
     groupmean: np.ndarray,
     names: Sequence[str],
@@ -46,19 +77,12 @@ def plot_group_forced_difference(
       (c) Arctic-mean difference SMBB − CMIP6 through time
     """
     i_c, i_s = names.index("cmip6"), names.index("smbb")
-    sel = (years >= period[0]) & (years <= period[1])
-    if landmask is not None:                                    # land fill values must not enter any mean
-        groupmean = np.where(landmask[None, None] == 1, np.nan, groupmean)
-        ensmean = np.where(landmask[None] == 1, np.nan, ensmean)
-    diff = groupmean[i_s] - groupmean[i_c]                      # (nyear, nlat, nlon)
-    diff_map = np.nanmean(diff[sel], axis=0)
-    vmax = float(np.nanpercentile(np.abs(diff_map), 99))
+    groupmean, ensmean = mask_land(groupmean, landmask), mask_land(ensmean, landmask)
 
     fig = plt.figure(figsize=(14, 8.5))
     gs = fig.add_gridspec(2, 2, height_ratios=[1.35, 1])
     ax_a = maps.map_axes(fig, gs[0, :])
-    maps.global_map(ax_a, lon, lat, diff_map, st.CMAP_SST, -vmax, vmax,
-                    f"forced JJA SST, SMBB − CMIP6 ({period[0]}–{period[1]}), °C")
+    diff_map_panel(ax_a, groupmean, names, years, lat, lon, period)
     ax_a.set_title("(a) Forced-response difference between forcing groups", loc="left",
                    weight="bold")
 
@@ -71,14 +95,8 @@ def plot_group_forced_difference(
     ax_b.legend(frameon=False); st.tidy(ax_b)
 
     ax_c = fig.add_subplot(gs[1, 1])
-    d = arctic_mean(groupmean[i_s] - groupmean[i_c], lat)
-    ax_c.axhline(0, color=st.MUTED, lw=0.8)
-    ax_c.fill_between(years, 0, d, color=st.C_SMBB, alpha=0.35)
-    ax_c.plot(years, d, color=st.INK)
-    ax_c.axvspan(*period, color=st.GRID, zorder=0)
-    ax_c.set_xlabel("year"); ax_c.set_ylabel("SMBB − CMIP6, °C")
+    arctic_diff_panel(ax_c, groupmean, names, years, lat, period)
     ax_c.set_title("(c) Arctic forced difference, SMBB − CMIP6", loc="left", weight="bold")
-    st.tidy(ax_c)
     st.save(fig, out_png)
 
 

@@ -8,11 +8,11 @@ Usage:
   python scripts/make_figure.py --list
   python scripts/make_figure.py S1                          # relative labels (the default) → fig_S1.pdf
   python scripts/make_figure.py S1 --labels original --suffix _orig
-  python scripts/make_figure.py 2 S8 S9 S10 S11 regional     # composites share one pass over the data
+  python scripts/make_figure.py 2 S10 S11 S12 S13 regional   # composites share one pass over the data
   python scripts/make_figure.py 4 --forced-method ensmean
   python scripts/make_figure.py all --fmt pdf
 
-Figure ids: 1 2 3 4 S1 … S13 plus extras phase_all, regional, sie_gmt_joint, learning_curve.
+Figure ids: 1 2 3 4 S1 … S15 plus extras phase_all, regional, sie_gmt_joint, learning_curve.
 """
 
 import argparse
@@ -72,6 +72,27 @@ class Data:
 
     def labels(self):
         return self.get("labels", lambda: xr.open_dataset(self.label_file()).load())
+
+    def labels_original(self):
+        """Original (LB22-style) labels for contrast in S2; None if the file is missing."""
+        f = paths.cesm2le_slowdown_file(self.a.variable, self.a.month)
+        return self.get("labels_orig", lambda: xr.open_dataset(f).load() if f.exists() else None)
+
+    # -- forced response per forcing group (S3; 02_cesm2le_forced.py) -----------
+    def forced(self):
+        def _load():
+            import netCDF4 as nc
+            from src.data.cesm2le.forced import load_groupmean_jja_sst
+            gm, names, years = load_groupmean_jja_sst(paths.CESM2LE_GROUPMEAN_JJA)
+            with nc.Dataset(paths.CESM2LE_GRID_FILE) as ds:
+                lat, lon = np.array(ds["lat"][:]), np.array(ds["lon"][:])
+            landmask = None
+            if paths.LANDMASK_FILE.exists():
+                with nc.Dataset(paths.LANDMASK_FILE) as ds:
+                    landmask = np.array(ds["landmask"][:])
+            return dict(groupmean=gm, names=names, years=years, lat=lat, lon=lon, landmask=landmask,
+                        period=tuple(self.a.forced_period))
+        return self.get("forced", _load)
 
     def sie(self):
         return self.get("sie", lambda: load_sie_monthly_files(
@@ -263,26 +284,26 @@ def build_composite(scenario, **kw):
     return _b
 
 
-def build_s7(d):
+def build_s9(d):
     acc = d.pass_over_splits()["acc"]
-    return paper.fig_s8({k: acc.result(k) for k in ("ALL_SLOW", "TP", "ALL_NONSLOW", "TN")})
+    return paper.fig_s10({k: acc.result(k) for k in ("ALL_SLOW", "TP", "ALL_NONSLOW", "TN")})
 
 
 def build_regional(d):
     return paper.fig_regional_relevance(d.pass_over_splits()["acc_pos"].result("TP"))
 
 
-def build_s2(d):
+def build_s4(d):
     sie, years = d.sie()
-    return paper.fig_s2(sie, years, d.labels(), varlabel=f"{d.a.month} {d.a.variable.upper()}")
+    return paper.fig_s4(sie, years, d.labels(), varlabel=f"{d.a.month} {d.a.variable.upper()}")
 
 
-def build_s6(d):
+def build_s8(d):
     s = d.single()
     yt, ys = s["y_true"]["test"], s["y_score"]["test"]
     years = np.arange(START_YEAR, START_YEAR + yt.size // BLOCK_SIZE)
     members = np.arange(d.a.split * BLOCK_SIZE, (d.a.split + 1) * BLOCK_SIZE)
-    return paper.fig_s7(yt, (ys >= s["threshold"]).astype(int), years, members)
+    return paper.fig_s9(yt, (ys >= s["threshold"]).astype(int), years, members)
 
 
 FIGURES = {
@@ -291,18 +312,20 @@ FIGURES = {
     "3":   (lambda d: paper.fig_3(d.pass_over_splits()["summaries"]["test"]), "P(TP | phase), test"),
     "4":   (lambda d: paper.fig_4(**d.observations()), "observations: CNN votes + indices"),
     "S1":  (lambda d: paper.fig_s1(**_ts_args(d)), "slowdown definition, 6 panels"),
-    "S2":  (build_s2, "label distributions, 8 panels"),
-    "S3":  (lambda d: paper.fig_s3(d.baselines()), "baselines vs CNN skill (07_baselines.py)"),
-    "S4":  (lambda d: paper.fig_s4(d.single()["y_true"]["test"], d.single()["y_score"]["test"]), "PR curve"),
-    "S5":  (lambda d: paper.fig_s5(d.single()["y_true"], d.single()["y_score"], d.single()["threshold"]), "confusion matrices"),
-    "S6":  (lambda d: paper.fig_s6(d.metrics()), "metric strip, all CNNs"),
-    "S7":  (build_s6, "test-member slowdown timeline"),
-    "S8":  (build_s7, "SST composites: all vs CNN-filtered"),
-    "S9":  (build_composite("FP"), "FP composite"),
-    "S10": (build_composite("TN"), "TN composite"),
-    "S11": (build_composite("FN"), "FN composite"),
-    "S12": (lambda d: paper.fig_s12(d.pass_over_splits()["summaries"]["train"]), "P(event | phase), train, all vs TP"),
-    "S13": (lambda d: paper.fig_s13(*(d.sie_gmt()[k] for k in ("years", "sie_count", "gmt_count", "both_count"))), "SIE vs GMT slowdown counts"),
+    "S2":  (lambda d: paper.fig_s2(d.labels(), d.labels_original(), d.a.cap_year), "pooled σ and onset cap"),
+    "S3":  (lambda d: paper.fig_s3(**d.forced()), "forced response: SMBB − CMIP6 (02_cesm2le_forced.py)"),
+    "S4":  (build_s4, "label distributions, 8 panels"),
+    "S5":  (lambda d: paper.fig_s5(d.baselines()), "baselines vs CNN skill (07_baselines.py)"),
+    "S6":  (lambda d: paper.fig_s6(d.single()["y_true"]["test"], d.single()["y_score"]["test"]), "PR curve"),
+    "S7":  (lambda d: paper.fig_s7(d.single()["y_true"], d.single()["y_score"], d.single()["threshold"]), "confusion matrices"),
+    "S8":  (lambda d: paper.fig_s8(d.metrics()), "metric strip, all CNNs"),
+    "S9":  (build_s8, "test-member slowdown timeline"),
+    "S10":  (build_s9, "SST composites: all vs CNN-filtered"),
+    "S11":  (build_composite("FP"), "FP composite"),
+    "S12": (build_composite("TN"), "TN composite"),
+    "S13": (build_composite("FN"), "FN composite"),
+    "S14": (lambda d: paper.fig_s14(d.pass_over_splits()["summaries"]["train"]), "P(event | phase), train, all vs TP"),
+    "S15": (lambda d: paper.fig_s15(*(d.sie_gmt()[k] for k in ("years", "sie_count", "gmt_count", "both_count"))), "SIE vs GMT slowdown counts"),
     "phase_all":      (lambda d: paper.fig_phase_all(d.pass_over_splits()["summaries"]["train"]), "P(slowdown | phase), all slowdowns"),
     "regional":       (build_regional, "TP composite with region boxes + regional relevance"),
     "sie_gmt_joint":  (lambda d: paper.fig_sie_gmt_joint(d.sie_gmt()["gmt_tr"], d.sie_gmt()["sie_tr"]), "joint PDF of GMT and SIE trends"),
@@ -326,6 +349,9 @@ def parse_args(argv=None):
                    help="CNN configuration tag (tvt_splits/models/predictions/attributions/<tag>); "
                         "default: original CNN outputs")
     p.add_argument("--member", type=int, default=6, help="highlighted member (Figs 1, S1)")
+    p.add_argument("--cap-year", type=int, default=2030, help="onset cap marked in S2")
+    p.add_argument("--forced-period", type=int, nargs=2, default=[2000, 2020],
+                   help="averaging period for the S3 forced-difference map")
     p.add_argument("--split", type=int, default=0, help="split for single-model figures (S4, S5, S7)")
     p.add_argument("--seed", type=int, default=0, help="seed index for single-model figures")
     p.add_argument("--variable", default="sie", choices=["sie", "sia"])
