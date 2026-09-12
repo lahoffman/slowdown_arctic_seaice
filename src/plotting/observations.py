@@ -67,10 +67,10 @@ def prediction_stack(obs_years, fraction, obs_slow_years, obs_slow, indices: Dic
     handles = [Line2D([], [], color=st.C_SLOW, lw=8, alpha=0.3, label="observed slowdown onset"),
                Line2D([], [], color=st.GRID, lw=8, label="window extends past record"),
                Line2D([], [], color="#8b1a1a", ls="--", label=f"> {frac_threshold:.0%} of CNNs vote slowdown")]
-    fig.legend(handles=handles, frameon=False, loc="upper center", ncol=3, fontsize=8,
+    fig.legend(handles=handles, frameon=False, loc="upper center", ncol=3,
                bbox_to_anchor=(0.5, 0.995))
     for ax in axes:
         st.tidy(ax)
     if title:
-        fig.suptitle(title, fontsize=11, y=1.02)
+        fig.suptitle(title, y=1.02)
     return fig

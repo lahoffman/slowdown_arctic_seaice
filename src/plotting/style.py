@@ -31,17 +31,18 @@ except ImportError:  # pragma: no cover
 CMAP_LRP_SIGNED, CMAP_LRP_POS = "PuOr_r", "magma"
 
 
-def paper_rc(base: float = 10) -> None:
-    """Set font sizes for manuscript figures (call once per script)."""
+def paper_rc(base: float = 14) -> None:
+    """Set font sizes for manuscript figures (call once per script). Legends/labels follow these."""
     plt.rcParams.update({"font.size": base, "axes.titlesize": base + 1,
                          "axes.labelsize": base, "xtick.labelsize": base - 1,
-                         "ytick.labelsize": base - 1, "legend.fontsize": base - 2})
+                         "ytick.labelsize": base - 1, "legend.fontsize": base - 2,
+                         "figure.titlesize": base + 1, "lines.linewidth": 1.6})
 
 
-def panel_label(ax, label: str, size: float = 12, x: float = 0.0, y: float = 1.03) -> None:
-    """Bold (a)/(b)/… label above the top-left corner of an axis."""
-    ax.text(x, y, label, transform=ax.transAxes, fontsize=size, fontweight="bold",
-            va="bottom", ha="left")
+def panel_label(ax, label: str, size=None, x: float = 0.0, y: float = 1.03) -> None:
+    """Bold (a)/(b)/… label above the top-left corner of an axis (size follows axes.titlesize)."""
+    ax.text(x, y, label, transform=ax.transAxes, fontsize=size or plt.rcParams["axes.titlesize"],
+            fontweight="bold", va="bottom", ha="left")
 
 
 def tidy(ax, grid_axis: str = "y") -> None:

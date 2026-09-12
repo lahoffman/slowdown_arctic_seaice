@@ -31,6 +31,7 @@ from configs import paths
 from src.data.cesm2le.slowdowns import load_sie_monthly_files
 from src.data.cesm2le import slowdowns_relative as rel
 from src.plotting import slowdowns as plot
+from src.plotting import style as st
 
 
 def relative_label_file(variable: str, month: str, window: int, n_sigma: float,
@@ -61,6 +62,7 @@ def parse_args():
 
 
 def main():
+    st.paper_rc()
     a = parse_args()
     print("02  —  Relative (epoch-free) slowdown labels")
     sie, years = load_sie_monthly_files(str(paths.CESM2LE_AICE_DIR / "metrics"), a.month,

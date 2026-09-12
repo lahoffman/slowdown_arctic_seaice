@@ -56,13 +56,13 @@ def fig_1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
         lb, lc = "(a)", "(b)"
     ax_b.plot(nsidc["ice_years"], nsidc["ice"], lw=2.2, color=st.INK, label=f"NSIDC {varname}")
     sd.trend_segments(ax_b, nsidc["ice_years"], nsidc["ice"], nsidc["trends"], nsidc["slowdown"], window)
-    ax_b.set_ylabel(f"{month} {varname} [M km²]"); ax_b.legend(frameon=False, fontsize=8)
+    ax_b.set_ylabel(f"{month} {varname} [M km²]"); ax_b.legend(frameon=False)
     panel_label(ax_b, lb)
     h = sd.members_bg(ax_c, years, sie)
     ax_c.plot(years, sie.mean(0), lw=1.6, color=st.INK, label="CESM2-LE ensemble mean")
     hw = sd.member_windows(ax_c, years, sie, trends, slow, tyrs, member, window)
     hh, _ = ax_c.get_legend_handles_labels()
-    ax_c.legend(handles=[h] + hh + [hw], frameon=False, fontsize=8)
+    ax_c.legend(handles=[h] + hh + [hw], frameon=False)
     ax_c.set_ylabel(f"{month} {varname} [M km²]"); ax_c.set_xlim(years[0], xmax)
     panel_label(ax_c, lc)
     for ax in (ax_b, ax_c):
@@ -186,7 +186,7 @@ def fig_s1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
     axe.plot(years, sie.mean(0), lw=1.5, color=st.INK, label="ensemble mean")
     hw = sd.member_windows(axe, years, sie, trends, slow, tyrs, member, window)
     hh, _ = axe.get_legend_handles_labels()
-    axe.legend(handles=[h] + hh + [hw], fontsize=8, frameon=False)
+    axe.legend(handles=[h] + hh + [hw], frameon=False)
 
     if relative:
         z = labels["z"].values
@@ -206,7 +206,7 @@ def fig_s1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
         axf.scatter(tyrs[slow[member] == 1], trends[member][slow[member] == 1], s=24, color=st.C_EVENT,
                     zorder=5, label="slowdown"); axf.set_ylabel(trend_lab)
     hh, _ = axf.get_legend_handles_labels()
-    axf.legend(handles=[h] + hh, fontsize=8, frameon=False)
+    axf.legend(handles=[h] + hh, frameon=False)
 
     for ax, lab in zip((axa, axc, axe), "ace"):
         ax.set_ylabel(ice_lab); panel_label(ax, f"({lab})")
@@ -214,7 +214,7 @@ def fig_s1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
         ax.set_ylabel(trend_lab); panel_label(ax, f"({lab})")
     panel_label(axf, "(f)")
     for ax in (axa, axb, axc, axd):
-        ax.legend(fontsize=8, frameon=False)
+        ax.legend(frameon=False)
     for ax in axes.ravel():
         st.tidy(ax)
     for ax in (axa, axb):
@@ -225,7 +225,7 @@ def fig_s1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
         ax.set_xlabel("year")
     tag = (f"relative labels: z = (trend − group-mean trend)/σ > {labels.attrs.get('n_sigma', 1):g}"
            if relative else "original labels: trend > f_obs × ensemble-mean trend")
-    fig.suptitle(f"Figure S1 — slowdown definition ({tag})", fontsize=11)
+    fig.suptitle(f"Figure S1 — slowdown definition ({tag})")
     return fig
 
 

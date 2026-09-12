@@ -95,7 +95,7 @@ def label_distributions(axes, slow: np.ndarray, sie_win: np.ndarray, varlabel="S
         ax.set_xlabel(xl); ax.set_ylabel("density"); ax.legend(frameon=False); _fmt(ax)
     for ax in axes:
         if period:
-            ax.set_title(period, fontsize=9, color=st.MUTED, loc="right")
+            ax.set_title(period, color=st.MUTED, loc="right")
         st.tidy(ax)
 
 
@@ -171,8 +171,8 @@ def plot_relative_labels(ds: xr.Dataset, sie: np.ndarray, years: np.ndarray,
     ax.set_xlim(years[0], min(years[-1], 2060))
     ax.set_ylabel("September SIE [M km²]")
     ax.set_title(f"(a) SIE and relative slowdown windows for member {member} "
-                 f"(orange = {window}-yr trends flagged as slowdown)", fontsize=10, loc="left")
-    ax.legend(fontsize=8, frameon=False, ncol=2)
+                 f"(orange = {window}-yr trends flagged as slowdown)", loc="left")
+    ax.legend(frameon=False, ncol=2)
 
     # (b) z for all members, highlighted member, ±n_sigma
     ax = axes[1]
@@ -185,8 +185,8 @@ def plot_relative_labels(ds: xr.Dataset, sie: np.ndarray, years: np.ndarray,
     ax.set_xlim(tyrs[0], min(tyrs[-1], 2060))
     ax.set_ylabel("trend anomaly z = (trend − group mean) / σ")
     ax.set_title(f"(b) standardised trend anomaly, all members (σ_pool = {float(ds['sigma'][0]):.3f} M km² yr⁻¹, "
-                 f"threshold ±{n_sigma:g}σ)", fontsize=10, loc="left")
-    ax.legend(fontsize=8, frameon=False, loc="upper right")
+                 f"threshold ±{n_sigma:g}σ)", loc="left")
+    ax.legend(frameon=False, loc="upper right")
 
     # (c) frequency by onset year
     ax = axes[2]
@@ -203,14 +203,12 @@ def plot_relative_labels(ds: xr.Dataset, sie: np.ndarray, years: np.ndarray,
     ax.set_xlim(tyrs[0], min(tyrs[-1], 2060)); ax.set_ylim(0, 1)
     ax.set_ylabel("fraction of members flagged slowdown")
     ax.set_xlabel("onset year of trend window")
-    ax.set_title("(c) slowdown frequency by onset year — a flat line means the labels carry no forced epoch",
-                 fontsize=10, loc="left")
-    ax.legend(fontsize=8, frameon=False, ncol=2)
+    ax.set_title("(c) slowdown frequency by onset year — a flat line means the labels carry no forced epoch", loc="left")
+    ax.legend(frameon=False, ncol=2)
 
     for ax in axes:
         st.tidy(ax)
-    fig.suptitle(f"Relative slowdown labels — window {window} yr, {n_sigma:g}σ, demean={ds.attrs['demean']}",
-                 fontsize=11)
+    fig.suptitle(f"Relative slowdown labels — window {window} yr, {n_sigma:g}σ, demean={ds.attrs['demean']}")
     st.save(fig, out_png)
 
 
@@ -224,7 +222,7 @@ def plot_window_sweep(datasets: Dict[int, xr.Dataset], out_png,
     ax.axvspan(pool_years[0], pool_years[1], color=st.GRID, alpha=0.35, zorder=0)
     ax.set_xlim(min(d["nyr"].values[0] for d in datasets.values()), 2060); ax.set_ylim(0, 0.6)
     ax.set_ylabel("fraction of members flagged"); ax.set_xlabel("onset year")
-    ax.set_title("Relative slowdown frequency by onset year — window sweep", fontsize=10, loc="left")
-    ax.legend(fontsize=8, frameon=False, ncol=3)
+    ax.set_title("Relative slowdown frequency by onset year — window sweep", loc="left")
+    ax.legend(frameon=False, ncol=3)
     st.tidy(ax)
     st.save(fig, out_png)

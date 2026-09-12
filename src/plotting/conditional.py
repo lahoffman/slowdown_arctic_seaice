@@ -47,7 +47,7 @@ def phase_bars(ax, summary: Dict, show: Sequence[str] = ("all", "tp"), label: st
                     + (" (TP)" if both else ""))
     ax.set_xticks(x); ax.set_xticklabels(names)
     ax.set_title(f"{label} {summary['title']}".strip(), loc="left", weight="bold")
-    ax.text(0.02, 0.98, "\n".join(text), transform=ax.transAxes, va="top", fontsize=8,
+    ax.text(0.02, 0.98, "\n".join(text), transform=ax.transAxes, va="top",
             bbox=dict(boxstyle="round", fc="white", alpha=0.7, lw=0))
     st.tidy(ax)
 

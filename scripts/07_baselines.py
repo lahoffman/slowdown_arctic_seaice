@@ -45,6 +45,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from configs import paths
 from src.analysis import baselines as bl
 from src.plotting.baselines import plot_summary
+from src.plotting import style as st
 from src.data.cesm2le.slowdowns_relative import frequency_table
 
 START_YEAR, END_YEAR = 1990, 2040
@@ -73,6 +74,7 @@ def parse_args():
 
 
 def main():
+    st.paper_rc()
     args = parse_args()
     out_dir = OUT_DIR / args.tag if args.tag else OUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
