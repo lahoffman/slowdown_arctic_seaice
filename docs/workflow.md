@@ -278,10 +278,28 @@ python scripts/07_baselines.py             # scalar baselines vs CNN
 
 ## Figure code
 
-All matplotlib code lives in `src/plotting/` (`style.py` for shared colours and
-helpers, one module per topic). Analysis modules under `src/data`, `src/cnn`,
-`src/analysis` never import matplotlib; scripts call the plotting functions
-and pass `paths.FIGURES_DIR / "<name>.png"` as the destination.
+Three layers, so every figure has exactly one implementation:
+
+1. `src/plotting/<topic>.py` — pure drawing functions that take loaded data
+   and return a Figure (no file I/O, no `paths`). `style.py` holds shared
+   colours and the `tidy` / `save` helpers.
+2. `src/plotting/paper.py` — one function per manuscript figure
+   (`fig_s1`, …), assembled from the topic modules.
+3. `scripts/make_figure.py` — the entry point: loads data via `configs.paths`,
+   calls the `paper` function, saves to `FIGURES_DIR/paper/`.
+
+```bash
+python scripts/make_figure.py --list
+python scripts/make_figure.py S1                                  # original labels → fig_S1.png
+python scripts/make_figure.py S1 --labels relative                # → fig_S1_rel_w10_s1_group.png
+python scripts/make_figure.py S1 --labels relative --window 5 --member 12 --fmt pdf
+```
+
+To add a figure: write `paper.fig_<name>`, add a `load_<name>` in
+`make_figure.py`, and register both in its `FIGURES` dict. The notebooks in
+`figures/` are for exploration; they should import the same `paper` functions
+rather than re-implementing the panels. Analysis modules under `src/data`,
+`src/cnn`, `src/analysis` never import matplotlib.
 
 ## Troubleshooting
 
