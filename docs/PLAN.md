@@ -11,8 +11,8 @@ Status: `[x]` done · `[~]` in progress / partly done · `[ ]` to do · `[-]` dr
 - [x] 1.1 Scalar baselines (`07_baselines.py`) on original and relative labels; Fig. S5; §3.1 reframed. *Result: CNN ≈ onset-year climatology on old labels; SIE anomaly alone beats it on both.*
 - [x] 1.2 Labels for the retrain: pooled σ (0.130), onsets 1990–2030 (`03 --end-year 2030`); Fig. S2. *Result: trend spread collapses with the ice after ≈2028 for every window; yearly σ would manufacture events near the ice floor.* §2.3 sentence pending (7.7).
 - [x] 1.3 Preprocessing: SST demeaned per forcing group (`forced.py::forced_response`, Fig. S3); `--sst-lag`; SIE-anomaly auxiliary input; `--tag` everywhere. Splits `rel_base` / `rel_aux` / `rel_lag1` built (4100 samples each). *Result: SMBB 0.1–0.3 °C cooler than CMIP6-BB in 2000–2020; Arctic forced difference −0.14 °C peak.*
-- [ ] 1.4 Train `base`, `aux` (headline), `lag1` — 9 splits × 5 seeds each (`04 --tag rel_base` etc.).
-- [ ] 1.5 Predict + `07_baselines.py --cnn-tag <config> --demean group` for each; all on the Fig. S5 axes. Bar to clear: `logit_sie_pacific` (AUROC ≈ 0.79).
+- [~] 1.4 Train `base`, `aux` (headline), `lag1` — 9 splits × 5 seeds each. Driver: `scripts/run_retrain.sh [--smoke] [tags]` (04 → 06 → 07 per tag, resumable with `--skip-existing`, logs in `results/logs/retrain_<tag>_<stamp>.log`). *Smoke test passes on synthetic data; full run queued on profx.*
+- [~] 1.5 Predict + `07_baselines.py --cnn-tag <config> --demean group` for each (done by `run_retrain.sh`); then `make_figure.py S5 --baselines-tag <tag>` and compare on the Fig. S5 axes. Bar to clear: `logit_sie_pacific` (AUROC ≈ 0.79).
 - [ ] 1.6 Under-ice SST (Zach): `openwater` variant of `aux` (aice > 15% → zero anomaly) + Arctic occlusion test; document under-ice SST in ERSST/OISST.
 - [ ] 1.7 LRP on retrained models; TP composites (Fig. 2) and occlusion on the same models.
 - [ ] 1.8 Decision gate → Branch A (pattern skill beyond ice state) or Branch B (methodological paper). Phase 6/7 rewrite waits for this.

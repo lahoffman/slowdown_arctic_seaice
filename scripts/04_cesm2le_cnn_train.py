@@ -35,6 +35,7 @@ Author: Lauren Hoffman  <lhoffma2@ucsc.edu>
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -53,6 +54,7 @@ from src.cnn.train import (
     predict_splits,
     collect_metrics_dataset,
     save_model,
+    load_model,
     save_metrics_dataset,
     model_inputs,
     n_aux_inputs,
@@ -98,6 +100,10 @@ def parse_args() -> argparse.Namespace:
                         help=f'Seeds per split (default {N_RUNS}).')
     parser.add_argument('--no-aux', action='store_true',
                         help='Ignore auxiliary scalars even if the split files have them.')
+    parser.add_argument('--epochs', type=int, default=TRAIN_CONFIG['num_epochs'],
+                        help=f"Max epochs (default {TRAIN_CONFIG['num_epochs']}; use 2 for a smoke test).")
+    parser.add_argument('--skip-existing', action='store_true',
+                        help='Reuse a saved model instead of retraining it (resume after a crash).')
     return parser.parse_args()
 
 
@@ -109,7 +115,9 @@ def main() -> None:
     args = parse_args()
     tag, n_runs = args.tag, args.n_runs
     models_dir, metrics_dir = paths.models_dir(tag), paths.metrics_dir(tag)
+    logs_dir = paths.LOGS_DIR / tag if tag else paths.LOGS_DIR
     use_aux = False if args.no_aux else None      # None = use if present
+    train_config = {**TRAIN_CONFIG, 'num_epochs': args.epochs}
 
     print()
     print('=' * 70)
@@ -121,9 +129,11 @@ def main() -> None:
     print(f'  N runs     : {n_runs}  (seeds {BASE_SEED}–{BASE_SEED + n_runs - 1})')
     print(f'  Models dir : {models_dir}')
     print(f'  Metrics dir: {metrics_dir}')
+    print(f'  Epochs     : {args.epochs}' + ('  (SMOKE TEST)' if args.epochs < TRAIN_CONFIG['num_epochs'] else ''))
     print('=' * 70)
 
     metrics_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
 
     for split_idx in args.splits:
         print(f'\n{"─" * 70}')
@@ -181,23 +191,29 @@ def main() -> None:
             # Reproducibility
             set_seed(seed)
 
-            # Class weights
-            cw = compute_class_weights(y_tr, fract_weight=FRACT_WEIGHT)
-            print(f'    Class weights: {cw}')
+            if args.skip_existing and paths.model_path(split_idx, run_idx, tag).exists():
+                model = load_model(models_dir, split_idx, run_idx)
+                print(f'    reusing saved model {paths.model_path(split_idx, run_idx, tag).name}')
+            else:
+                # Class weights
+                cw = compute_class_weights(y_tr, fract_weight=FRACT_WEIGHT)
+                print(f'    Class weights: {cw}')
 
-            # Build and train model
-            model = build_cnn(nx, ny, nch, rl2=RL2, drop=DROP, n_aux=n_aux)
-            model, history = train_model(
-                model, x_tr, y_tr, x_va, y_va,
-                config=TRAIN_CONFIG,
-                class_weights=cw,
-            )
-            n_epochs = len(history.history['loss'])
-            val_loss  = history.history['val_loss'][-1]
-            print(f'    Stopped at epoch {n_epochs},  val_loss = {val_loss:.4f}')
+                # Build and train model
+                model = build_cnn(nx, ny, nch, rl2=RL2, drop=DROP, n_aux=n_aux)
+                model, history = train_model(
+                    model, x_tr, y_tr, x_va, y_va,
+                    config=train_config,
+                    class_weights=cw,
+                )
+                n_epochs = len(history.history['loss'])
+                val_loss  = history.history['val_loss'][-1]
+                print(f'    Stopped at epoch {n_epochs},  val_loss = {val_loss:.4f}', flush=True)
 
-            # Save model
-            save_model(model, models_dir, split_idx, run_idx)
+                # Save model + training history (for the learning-curve figure)
+                save_model(model, models_dir, split_idx, run_idx)
+                hist = {k: [float(v) for v in vals] for k, vals in history.history.items()}
+                (logs_dir / f'history_split{split_idx}_run{run_idx}.json').write_text(json.dumps(hist))
 
             # Predict on all splits
             y_scores_runs.append(predict_splits(model, x_tr, x_va, x_te))

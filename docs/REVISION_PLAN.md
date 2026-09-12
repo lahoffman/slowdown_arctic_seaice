@@ -122,7 +122,7 @@ Split files record `target_years = 1990-2030` (`1991-2030` for lag1), `demean = 
 
 *Manuscript changes from 1.2/1.3 (tracked changes pending).* New Fig. S2 (σ / cap) and Fig. S3 (forcing groups); old S2–S14 renumbered S4–S16 (`make_figure.py` and `paper.py` already use the new ids). §2.1: forced response removed per forcing group, with the obs reference deferred to Phase 6.1. §2.3: pooled σ, onsets 1990–2030, one clause that all windows roll off from ≈2028. Fig. S1 and S4 unchanged in content. After 1.4: every CNN-based figure — Figs 2, 3, S6–S14 — is regenerated with `make_figure.py --tag rel_aux` (or whichever configuration 1.8 selects), Fig. S5 gains the retrained CNN bars, Fig. 4 waits for Phase 6.
 
-**Step 1.4 — Train three configurations, same architecture, 9 splits × 5 seeds each.**
+**Step 1.4 — IN PROGRESS. Train three configurations, same architecture, 9 splits × 5 seeds each** (`scripts/run_retrain.sh`, which chains 04 → 06 → 07 per tag, is resumable via `04 --skip-existing`, and has a `--smoke` mode: 1 split, 1 seed, 2 epochs).
 - `base`: JJA SST of the onset year (as now), on the new labels. Reference run.
 - `aux`: same SST plus the September SIE anomaly at onset as a scalar input concatenated before the dense layer. The CNN can then only earn skill *beyond* the ice state. Headline configuration.
 - `lag1`: JJA SST of the year *before* onset (+ the SIE scalar). Tests whether SST-pattern skill exists at one year lead, i.e. whether "predict" is defensible.

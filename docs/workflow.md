@@ -176,6 +176,7 @@ the forced response by ensemble mean or linear method.
 ```bash
 python scripts/04_cesm2le_cnn_train.py                    # original
 python scripts/04_cesm2le_cnn_train.py --tag rel_aux      # a tagged configuration (aux input auto-detected)
+scripts/run_retrain.sh --smoke && scripts/run_retrain.sh   # all revision configurations: 04 → 06 → 07 per tag, logged
 ```
 
 Trains the JJA SST CNN for each of the 9 splits and every random seed. Per split

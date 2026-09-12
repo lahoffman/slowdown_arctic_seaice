@@ -121,7 +121,7 @@ class Data:
             with xr.open_dataset(self.pred_dir() / f"cnn_prediction_cesm2le_M{k}_{r}.nc") as ds:
                 score = {p: ds[f"y_prob_{p}"].values for p in ("train", "val", "test")}
                 thr = float(ds["threshold"].values)
-            hist_p = paths.LOGS_DIR / f"history_split{k}_run{r}.json"
+            hist_p = (paths.LOGS_DIR / self.tag if self.tag else paths.LOGS_DIR) / f"history_split{k}_run{r}.json"
             hist = json.load(open(hist_p)) if hist_p.exists() else None
             return dict(y_true={"train": sp["slow_tr"], "val": sp["slow_va"], "test": sp["slow_te"]},
                         y_score=score, threshold=thr, history=hist)
