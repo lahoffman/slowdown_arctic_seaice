@@ -68,6 +68,7 @@ from src.cnn.splits import (
     save_tvt_split,
 )
 from src.analysis.baselines import load_sie_anomaly
+from src.data.cesm2le.icemask import load_icemask, apply_openwater
 
 
 # =============================================================================
@@ -265,6 +266,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--aux', choices=['none', 'sie_anom'], default='none',
                         help="Auxiliary scalar input stored alongside the maps "
                              "(default none; 'sie_anom' = September SIE anomaly at onset).")
+    parser.add_argument('--openwater', action='store_true',
+                        help='Zero the SST anomaly where JJA ice concentration > 0.15 '
+                             '(needs 02_cesm2le_icemask.py; revision step 1.6).')
+    parser.add_argument('--ice-threshold', type=float, default=0.15)
     parser.add_argument('--tag', default=None,
                         help='Configuration tag → outputs go to tvt_splits/<tag>/ '
                              '(default: untagged original location).')
@@ -357,6 +362,7 @@ def main(args: argparse.Namespace) -> None:
     print(f'  Demean       : {args.demean}')
     print(f'  SST lag      : {args.sst_lag} yr')
     print(f'  Aux input    : {args.aux}')
+    print(f'  Open water   : {"aice > %g masked" % args.ice_threshold if args.openwater else "no"}')
     print(f'  Tag          : {tag or "(none — original configuration)"}')
     print(f'  N splits     : {N_SPLITS}')
     print(f'  Output dir   : {out_dir}')
@@ -378,6 +384,20 @@ def main(args: argparse.Namespace) -> None:
     print(f'    SST shape : {sst.shape}  '
           f'(nens={sst.shape[0]}, nyear={sst.shape[1]}, '
           f'nx={sst.shape[2]}, ny={sst.shape[3]})')
+
+    # ------------------------------------------------------------------
+    # 1b.  Open-water variant: zero the anomaly under JJA sea ice (step 1.6)
+    # ------------------------------------------------------------------
+    if args.openwater:
+        if not paths.CESM2LE_ICEMASK_JJA.exists():
+            raise FileNotFoundError(f"{paths.CESM2LE_ICEMASK_JJA} not found — run "
+                                    "scripts/02_cesm2le_icemask.py first.")
+        ice = load_icemask(paths.CESM2LE_ICEMASK_JJA, sst_years - args.sst_lag, args.ice_threshold)
+        with nc.Dataset(paths.CESM2LE_GRID_FILE) as g:
+            arctic_rows = np.array(g['lat'][:]) >= 65
+        sst = apply_openwater(sst, ice)
+        print(f'    open-water mask applied: {ice.mean():.3f} of all cells, '
+              f'{ice[:, :, arctic_rows, :].mean():.3f} of cells north of 65°N set to zero anomaly')
 
     # ------------------------------------------------------------------
     # 2.  Load September slowdown labels
@@ -488,6 +508,8 @@ def main(args: argparse.Namespace) -> None:
                 'demean':          args.demean,
                 'sst_lag':         int(args.sst_lag),
                 'aux':             args.aux,
+                'openwater':       int(args.openwater),
+                'ice_threshold':   float(args.ice_threshold) if args.openwater else 0.0,
                 'tag':             tag or '',
                 'member_groups':   str(MEMBER_GROUPS),
                 **aux_attrs,

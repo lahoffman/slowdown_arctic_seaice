@@ -141,6 +141,8 @@ LBL=$SLOWDOWN_DATA_ROOT/cesm2le/slowdowns/cesm2le_sie_slowdown_relative_SEP_w10_
 python scripts/03_cesm2le_tvt_splits.py --labels-file $LBL --demean group --tag rel_base
 python scripts/03_cesm2le_tvt_splits.py --labels-file $LBL --demean group --aux sie_anom --tag rel_aux
 python scripts/03_cesm2le_tvt_splits.py --labels-file $LBL --demean group --aux sie_anom --sst-lag 1 --start-year 1991 --tag rel_lag1
+python scripts/02_cesm2le_icemask.py                                    # JJA ice mask on the SST grid (step 1.6)
+python scripts/03_cesm2le_tvt_splits.py --labels-file $LBL --demean group --aux sie_anom --openwater --tag rel_openwater
 ```
 
 Every configuration has a `--tag`; stages 04–06 take the same `--tag` and read /

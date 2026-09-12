@@ -13,7 +13,7 @@ Status: `[x]` done · `[~]` in progress / partly done · `[ ]` to do · `[-]` dr
 - [x] 1.3 Preprocessing: SST demeaned per forcing group (`forced.py::forced_response`, Fig. S3); `--sst-lag`; SIE-anomaly auxiliary input; `--tag` everywhere. Splits `rel_base` / `rel_aux` / `rel_lag1` built (4100 samples each). *Result: SMBB 0.1–0.3 °C cooler than CMIP6-BB in 2000–2020; Arctic forced difference −0.14 °C peak.*
 - [~] 1.4 Train `base`, `aux` (headline), `lag1` — 9 splits × 5 seeds each. Driver: `scripts/run_retrain.sh [--smoke] [tags]` (04 → 06 → 07 per tag, resumable with `--skip-existing`, logs in `results/logs/retrain_<tag>_<stamp>.log`). *Smoke test passes on synthetic data; full run queued on profx.*
 - [~] 1.5 Predict + `07_baselines.py --cnn-tag <config> --demean group` for each (done by `run_retrain.sh`); then `make_figure.py S5 --baselines-tag <tag>` and compare on the Fig. S5 axes. Bar to clear: `logit_sie_pacific` (AUROC ≈ 0.79).
-- [ ] 1.6 Under-ice SST (Zach): `openwater` variant of `aux` (aice > 15% → zero anomaly) + Arctic occlusion test; document under-ice SST in ERSST/OISST.
+- [~] 1.6 Under-ice SST (Zach): `openwater` variant of `aux` — code done (`02_cesm2le_icemask.py` → `03 --openwater --tag rel_openwater` → `run_retrain.sh rel_openwater`); Arctic occlusion test (5.3) and the ERSST/OISST under-ice note still to do.
 - [ ] 1.7 LRP on retrained models; TP composites (Fig. 2) and occlusion on the same models.
 - [ ] 1.8 Decision gate → Branch A (pattern skill beyond ice state) or Branch B (methodological paper). Phase 6/7 rewrite waits for this.
 
