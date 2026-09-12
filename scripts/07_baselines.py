@@ -24,7 +24,7 @@ Outputs (under RESULTS_DIR/baselines[/<tag>]/):
   baselines_all_splits.nc   stacked + across-split median
   baselines_summary.md      markdown table for the manuscript
   baselines_coefs.json      logistic coefficients per split
-  <repo>/figures/output/baselines_skill[_<tag>].png
+  FIGURES_DIR/baselines_skill[_<tag>].png
 
 Usage:
   python scripts/07_baselines.py                                   # original labels
@@ -135,7 +135,7 @@ def main():
 
     if not args.no_fig:
         suffix = f"_{args.tag}" if args.tag else ""
-        plot_summary(stacked, paths.REPO_FIGURES_DIR / f"baselines_skill{suffix}.png")
+        plot_summary(stacked, paths.FIGURES_DIR / f"baselines_skill{suffix}.png")
 
 
 if __name__ == "__main__":

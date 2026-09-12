@@ -44,7 +44,6 @@ slowdown_arctic_seaice/
 ├── scripts/                 # Numbered workflow scripts (run these)
 ├── notebooks/               # Exploratory notebooks
 ├── figures/                 # Notebooks that build paper figures
-│   └── output/              # Diagnostic figures from scripts (gitignored)
 ├── docs/                    # setup.md, workflow.md, REVISION_PLAN.md
 │
 └── DATA_ROOT/               # All data + outputs (outside the repo, gitignored)
@@ -53,12 +52,10 @@ slowdown_arctic_seaice/
 ```
 
 Data and outputs live **outside** the repo, under the directory pointed to by
-the `SLOWDOWN_DATA_ROOT` environment variable. The one exception is
-`figures/output/`, where the numbered scripts drop diagnostic figures so they
-are easy to find without browsing the data root (gitignored; publication
-figures built by the notebooks still go to `DATA_ROOT/results/figures`).
-Figure code lives in `src/plotting/` — analysis modules never import
-matplotlib. Nothing large is committed to
+the `SLOWDOWN_DATA_ROOT` environment variable. Diagnostic figures
+from the numbered scripts go to `DATA_ROOT/results/figures` alongside the
+publication figures. Figure code lives in `src/plotting/` — analysis modules
+never import matplotlib. Nothing large is committed to
 git (see `.gitignore`).
 
 ## Quick start
