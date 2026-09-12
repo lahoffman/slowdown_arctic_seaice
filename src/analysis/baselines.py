@@ -267,17 +267,26 @@ def run_split(fields: Dict[str, np.ndarray], labels: np.ndarray, years: np.ndarr
         extras["f1_ci"][name] = member_bootstrap_f1(y_te[ok_te], s_te, thr, mem_te[ok_te], n_boot)
 
     # --- cached CNN runs ----------------------------------------------------
-    if cnn_preds:
+    # The cached files carry the labels the CNN was trained on. If the label
+    # set passed here differs (e.g. relative labels), the CNN is scored against
+    # the *new* labels — a transfer test, flagged in the dataset attrs.
+    if cnn_preds and len(cnn_preds[0][0]) == len(y_te):
+        same_labels = all(np.array_equal(yt, y_te) for yt, _, _ in cnn_preds)
         per_run = []
         for r, (yt, yp, thr) in enumerate(cnn_preds):
-            m = compute_metrics(yt, yp, thr)
+            m = compute_metrics(y_te, yp, thr)
             results[f"cnn_run{r}"] = m
             per_run.append(m)
         results["cnn_median"] = {k: float(np.median([m[k] for m in per_run]))
                                  for k in METRIC_NAMES}
-        if len(cnn_preds[0][0]) == len(y_te):
-            yt, yp, thr = cnn_preds[0]
-            extras["f1_ci"]["cnn_run0"] = member_bootstrap_f1(yt, yp, thr, mem_te, n_boot)
+        yp0, thr0 = cnn_preds[0][1], cnn_preds[0][2]
+        extras["f1_ci"]["cnn_run0"] = member_bootstrap_f1(y_te, yp0, thr0, mem_te, n_boot)
+        extras["cnn_labels_match"] = bool(same_labels)
+        yp_mean = np.mean([yp for _, yp, _ in cnn_preds], axis=0)
+        extras["cnn_attribution"] = cnn_output_attribution(yp_mean, p_te, data["te"]["sie_anom"])
+    elif cnn_preds:
+        print(f"  [skip] CNN predictions have {len(cnn_preds[0][0])} test samples, "
+              f"labels have {len(y_te)}")
 
     models = list(results)
     vals = np.array([[results[m][k] for m in models] for k in METRIC_NAMES], float)
@@ -287,12 +296,43 @@ def run_split(fields: Dict[str, np.ndarray], labels: np.ndarray, years: np.ndarr
                            "val_block": val_block, "n_test": int(y_te.size),
                            "n_train": int(y_tr.size),
                            "always_positive_f1_analytic": float(2 * y_te.mean() / (1 + y_te.mean())),
-                           "random_f1_p95": extras["random_f1"]["p95"]})
+                           "random_f1_p95": extras["random_f1"]["p95"],
+                           "cnn_labels_match": int(extras.get("cnn_labels_match", -1))})
     lo = np.array([extras["f1_ci"].get(m, (np.nan, np.nan))[0] for m in models])
     hi = np.array([extras["f1_ci"].get(m, (np.nan, np.nan))[1] for m in models])
     ds["f1_ci_low"] = ("model", lo)
     ds["f1_ci_high"] = ("model", hi)
     return ds, extras
+
+
+def cnn_output_attribution(y_prob: np.ndarray, yearclim_p: np.ndarray,
+                           sie_anom: np.ndarray) -> Dict[str, float]:
+    """
+    R² of CNN test probabilities explained by year climatology, SIE anomaly,
+    and both (OLS). Also the partial R² each adds on top of the other.
+    """
+    def r2(X):
+        X1 = np.column_stack([np.ones(len(y_prob)), X])
+        beta, *_ = np.linalg.lstsq(X1, y_prob, rcond=None)
+        res = y_prob - X1 @ beta
+        return 1 - res.var() / y_prob.var()
+    r_year, r_sie = r2(yearclim_p), r2(sie_anom)
+    r_both = r2(np.column_stack([yearclim_p, sie_anom]))
+    return {"r2_yearclim": round(float(r_year), 3), "r2_sie_anom": round(float(r_sie), 3),
+            "r2_both": round(float(r_both), 3),
+            "partial_r2_sie_given_year": round(float(r_both - r_year), 3),
+            "partial_r2_year_given_sie": round(float(r_both - r_sie), 3),
+            "corr_prob_yearclim": round(float(np.corrcoef(y_prob, yearclim_p)[0, 1]), 3),
+            "corr_prob_sie_anom": round(float(np.corrcoef(y_prob, sie_anom)[0, 1]), 3)}
+
+
+def attribution_markdown(attrib: Dict[str, Dict[str, float]]) -> str:
+    """Median across splits of the CNN-output attribution diagnostics."""
+    keys = list(next(iter(attrib.values())))
+    lines = ["CNN test probability explained by (median across splits):"]
+    for k in keys:
+        lines.append(f"  {k:28s} {np.median([a[k] for a in attrib.values()]):6.3f}")
+    return "\n".join(lines)
 
 
 def iter_split_blocks(n_splits: int = 9, n_blocks: int = 10):

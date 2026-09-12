@@ -98,6 +98,26 @@ SIE-vs-GMT comparison figure.
 **Depends on:** `01_cesm2le_preprocessing.py` (SIE/SIA or GMT files) and
 `01_nsidc_slowdown_sie_sia.py` (thresholds).
 
+### Relative (epoch-free) slowdown labels
+
+```bash
+python scripts/02_cesm2le_slowdowns_relative.py                     # 10-yr, 1σ, per-group demean
+python scripts/02_cesm2le_slowdowns_relative.py --window 3 5 7 10 15  # window sweep
+python scripts/02_cesm2le_slowdowns_relative.py --demean all        # full-ensemble reference
+```
+
+Alternative label definition (revision plan §4.5): a slowdown is a member's
+decadal-trend anomaly relative to its *forcing-group* mean trend (members 0–49
+CMIP6 BB, 50–99 SMBB) exceeding +n σ, with σ pooled over 1990–2040. This
+removes the year-dependence of the base rate produced by scaling the observed
+threshold with a near-zero ensemble-mean trend, and keeps the biomass-burning
+forcing artifact from leaking between groups. Writes one file per window × σ
+to `CESM2LE_SLOWDOWNS_DIR/cesm2le_sie_slowdown_relative_SEP_w{w}_s{s}_{demean}_1990-2100.nc`
+and prints slowdown frequency by decade and group. The original labels are
+untouched.
+
+**Depends on:** `01_cesm2le_preprocessing.py` only.
+
 ## Stage 03 — Build model-ready data
 
 ### Training splits
@@ -180,8 +200,14 @@ ERSST script uses the default 0.5 sigmoid threshold.
 ## Stage 07 — Scalar baselines (revision plan §1.1)
 
 ```bash
-python scripts/07_baselines.py                 # all baselines + cached CNN + figure
+python scripts/07_baselines.py                 # original labels, all baselines + cached CNN + figure
 python scripts/07_baselines.py --no-cnn --no-fig --n-boot 200
+
+# relative labels / window sweep (outputs go to results/baselines/<tag>/)
+L=$SLOWDOWN_DATA_ROOT/cesm2le/slowdowns
+for w in 3 5 7 10 15; do
+  python scripts/07_baselines.py --labels-file $L/cesm2le_sie_slowdown_relative_SEP_w${w}_s1_group_1990-2100.nc --tag rel_w${w}_s1
+done
 ```
 
 Fits reference and logistic-regression baselines on the training members of
@@ -190,9 +216,14 @@ block assignment as the CNN: always-positive, random-at-prevalence, onset-year
 climatology, September SIE anomaly at onset, the Arctic SST / Niño3.4 / IPO
 indices, and their combinations. If cached CNN predictions exist
 (`results/predictions/cesm2le/`) they are scored with the same metric code so
-the comparison is like for like. Writes per-split and stacked NetCDFs, a
-markdown summary table and logistic coefficients to `results/baselines/`, and
-`results/figures/baselines_skill.png`. No TensorFlow required.
+the comparison is like for like; when a different label file is passed the
+CNN is scored against the *new* labels (a transfer test, flagged by the
+`cnn_labels_match` attribute). Also regresses the CNN test probabilities on
+year climatology and SIE anomaly (`cnn_attribution.json`) to quantify how
+much of the CNN output those two explain. Writes per-split and stacked
+NetCDFs, a markdown summary table and logistic coefficients to
+`results/baselines[/<tag>]/`, and `results/figures/baselines_skill[_<tag>].png`.
+No TensorFlow required.
 
 **Depends on:** `02_cesm2le_slowdowns.py`, `02_cesm2le_climate_indices.py`,
 `01_cesm2le_preprocessing.py` (SIE metrics); optionally

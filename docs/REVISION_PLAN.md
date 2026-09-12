@@ -81,6 +81,8 @@ Repo facts the plan relies on (verified in the code):
 
 ## Phase 1 — Is the Arctic SST signal an initial-condition artifact? (reviewer comments 1, 11)
 
+> **Status (2026-09-12) — Step 1.1 run on the server, original labels.** CNN median test F1 ≈ 0.48, AUPRC ≈ 0.50, AUROC ≈ 0.71. Year-climatology alone (no SST, no ice): 0.48 / 0.50 / 0.71. Logistic on SIE anomaly at onset: 0.53 / 0.54 / 0.74. SIE + year: 0.61 / 0.67 / 0.81. Arctic SST index alone ≈ always-positive (F1 0.44). Adding Arctic SST to SIE(t) changes nothing. **Decision gate: not passed.** The CNN is indistinguishable from the forced label epoch and is beaten by the initial ice state. Next: (i) epoch-free labels (`02_cesm2le_slowdowns_relative.py`, per-forcing-group demeaning, window sweep 3–15 yr), (ii) rerun 07 with `--labels-file`, (iii) `cnn_attribution.json` to quantify epoch vs ice-state content of the CNN output, (iv) only then retrain (lag-1 SST, SIE(t) as auxiliary input, group-wise SST demeaning in `splits.py`). Branch B framing (§6.6) is now the default unless (iv) clears `logit_sie_anom` across splits.
+
 This is the make-or-break phase. Goal: show that skill and the Arctic relevance survive when the trivial "low ice at t ⇒ flatter trend from t" pathway is removed.
 
 **Step 1.1 — Build the scalar baselines (no CNN).** New script `scripts/07_baselines.py` and module `src/analysis/baselines.py`.

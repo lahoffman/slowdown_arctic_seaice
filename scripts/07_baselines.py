@@ -15,7 +15,11 @@ members:
   logit_all_scalars   everything above
   cnn_run{r}          cached CNN predictions (06_cnn_predict_cesm2le.py), if present
 
-Outputs (under RESULTS_DIR/baselines/):
+Also regresses the cached CNN test probabilities on year-climatology and
+SIE anomaly to quantify how much of the CNN output those two explain
+(cnn_attribution.json).
+
+Outputs (under RESULTS_DIR/baselines[/<tag>]/):
   baselines_split{k}.nc     metric × model per split
   baselines_all_splits.nc   stacked + across-split median
   baselines_summary.md      markdown table for the manuscript
@@ -23,7 +27,8 @@ Outputs (under RESULTS_DIR/baselines/):
   FIGURES_DIR/baselines_skill.png
 
 Usage:
-  python scripts/07_baselines.py
+  python scripts/07_baselines.py                                   # original labels
+  python scripts/07_baselines.py --labels-file <relative-label .nc> --tag rel_w10_s1
   python scripts/07_baselines.py --n-boot 200 --no-cnn --no-fig
 """
 
@@ -39,6 +44,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from configs import paths
 from src.analysis import baselines as bl
+from src.data.cesm2le.slowdowns_relative import frequency_table
 
 START_YEAR, END_YEAR = 1990, 2040
 N_SPLITS, N_BLOCKS = 9, 10
@@ -58,6 +64,10 @@ def parse_args():
     p.add_argument("--no-fig", action="store_true", help="skip the summary figure")
     p.add_argument("--variable", default="sie", choices=["sie", "sia"])
     p.add_argument("--month", default="SEP")
+    p.add_argument("--labels-file", type=Path, default=None,
+                   help="slowdown label NetCDF (default: original 02_cesm2le_slowdowns output)")
+    p.add_argument("--tag", default=None,
+                   help="output subdirectory / figure suffix (default: none)")
     return p.parse_args()
 
 
@@ -99,13 +109,15 @@ def plot_summary(stacked, out_png: Path) -> None:
 
 def main():
     args = parse_args()
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir = OUT_DIR / args.tag if args.tag else OUT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    label_file = args.labels_file or paths.cesm2le_slowdown_file(args.variable, args.month)
     print("07  —  Scalar baselines for slowdown classification")
-    print(f"  years {args.start_year}–{args.end_year}   splits {N_SPLITS}   n_boot {args.n_boot}\n")
+    print(f"  years {args.start_year}–{args.end_year}   splits {N_SPLITS}   n_boot {args.n_boot}")
+    print(f"  labels: {label_file}\n")
 
     # 1. labels + scalar fields on the (nens, nyear) grid -----------------------
-    labels, years = bl.load_labels(paths.cesm2le_slowdown_file(args.variable, args.month),
-                                   args.start_year, args.end_year)
+    labels, years = bl.load_labels(label_file, args.start_year, args.end_year)
     sie, sie_anom = bl.load_sie_anomaly(paths.CESM2LE_AICE_DIR / "metrics", years,
                                         month=args.month, variable=args.variable)
     fields = {"sie": sie, "sie_anom": sie_anom}
@@ -113,23 +125,23 @@ def main():
                                               args.start_year, args.end_year))
     print(f"  labels {labels.shape}  prevalence {labels.mean():.3f}  "
           f"fields: {sorted(fields)}")
-    print(f"  slowdown frequency by onset year (all members):")
-    freq = labels.mean(0)
-    for y0 in range(args.start_year, args.end_year + 1, 10):
-        sel = (years >= y0) & (years < y0 + 10)
-        print(f"    {y0}–{min(y0 + 9, args.end_year)}: {freq[sel].mean():.2f}")
+    print("  slowdown frequency by decade and forcing group (cmip6 = members 0-49, smbb = 50-99):")
+    print(frequency_table(labels, years))
+    print()
 
     # 2. per-split fits --------------------------------------------------------
-    datasets, coefs = [], {}
+    datasets, coefs, attrib = [], {}, {}
     for k, test_block, val_block, train_blocks in bl.iter_split_blocks(N_SPLITS, N_BLOCKS):
         cnn = None if args.no_cnn else bl.load_cnn_test_predictions(CNN_PRED_DIR, k)
         if cnn is not None and not cnn:
             cnn = None
         ds, extra = bl.run_split(fields, labels, years, k, test_block, val_block,
                                  train_blocks, n_boot=args.n_boot, cnn_preds=cnn)
-        ds.to_netcdf(OUT_DIR / f"baselines_split{k}.nc")
+        ds.to_netcdf(out_dir / f"baselines_split{k}.nc")
         datasets.append(ds)
         coefs[f"split{k}"] = extra["coefs"]
+        if "cnn_attribution" in extra:
+            attrib[f"split{k}"] = extra["cnn_attribution"]
         f1 = ds["metric_value"].sel(metric="F1")
         print(f"  split {k}: F1  always+ {float(f1.sel(model='always_positive')):.3f}"
               f"  year {float(f1.sel(model='year_climatology')):.3f}"
@@ -143,18 +155,22 @@ def main():
         np.median([d.attrs["always_positive_f1_analytic"] for d in datasets]))
     stacked.attrs["random_f1_p95_median"] = float(
         np.median([d.attrs["random_f1_p95"] for d in datasets]))
-    stacked.to_netcdf(OUT_DIR / "baselines_all_splits.nc")
+    stacked.to_netcdf(out_dir / "baselines_all_splits.nc")
     md = bl.summary_markdown(stacked)
     header = (f"# Baseline skill (test members, median across {N_SPLITS} splits)\n\n"
-              f"Always-positive F1 (analytic, median) = {stacked.attrs['always_positive_f1_median']:.3f}; "
+              f"Labels: `{label_file.name}`. Always-positive F1 (analytic, median) = {stacked.attrs['always_positive_f1_median']:.3f}; "
               f"random-at-prevalence F1 95th pct = {stacked.attrs['random_f1_p95_median']:.3f}.\n\n")
-    (OUT_DIR / "baselines_summary.md").write_text(header + md + "\n")
-    (OUT_DIR / "baselines_coefs.json").write_text(json.dumps(coefs, indent=2))
+    (out_dir / "baselines_summary.md").write_text(header + md + "\n")
+    (out_dir / "baselines_coefs.json").write_text(json.dumps(coefs, indent=2))
     print("\n" + header + md)
-    print(f"\n  outputs → {OUT_DIR}")
+    if attrib:
+        (out_dir / "cnn_attribution.json").write_text(json.dumps(attrib, indent=2))
+        print("\n" + bl.attribution_markdown(attrib))
+    print(f"\n  outputs → {out_dir}")
 
     if not args.no_fig:
-        plot_summary(stacked, paths.FIGURES_DIR / "baselines_skill.png")
+        suffix = f"_{args.tag}" if args.tag else ""
+        plot_summary(stacked, paths.FIGURES_DIR / f"baselines_skill{suffix}.png")
 
 
 if __name__ == "__main__":
