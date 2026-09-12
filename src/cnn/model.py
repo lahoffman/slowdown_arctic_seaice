@@ -13,6 +13,12 @@ The model takes spatial maps of shape ``(n_samples, nx, ny, nch)`` and outputs
 a scalar sigmoid probability for each sample.  For the JJA-only version
 ``nch = 1`` (one channel: the JJA mean SST map).
 
+Revision step 1.3 adds an optional second input of ``n_aux`` standardised
+scalars (e.g. the onset-year September SIE anomaly) that is concatenated with
+the flattened convolutional features before the output layer.  The model then
+takes ``[maps, aux]`` as input; ``n_aux=0`` reproduces the original network
+exactly (same layers, same layer order), so existing saved models still load.
+
 Hyperparameter defaults mirror the values used in the original M1 script and
 are exposed as module-level constants so they can be overridden without editing
 function signatures.
@@ -29,7 +35,7 @@ try:
     import tensorflow as tf
     from tensorflow.keras import backend as K
     from tensorflow.keras.layers import (
-        Input, Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+        Input, Conv2D, MaxPooling2D, Flatten, Dense, Dropout, Concatenate
     )
     from tensorflow.keras.regularizers import l2
     from tensorflow.keras.models import Model
@@ -108,14 +114,28 @@ def build_cnn(
     nch: int,
     rl2: float = RL2,
     drop: float = DROP,
+    n_aux: int = 0,
 ) -> "Model":
     """
     Build the binary-classification CNN used for slowdown prediction.
+
+    Parameters
+    ----------
+    nx, ny, nch : int
+        Map dimensions and number of channels.
+    rl2, drop : float
+        L2 strength on the convolutional kernels and dropout rate.
+    n_aux : int
+        Number of auxiliary scalar inputs (0 = maps only, original model).
+        When > 0 the model has two inputs, ``[maps (n, nx, ny, nch),
+        aux (n, n_aux)]``; the scalars bypass the convolutions and enter the
+        final logistic layer alongside the flattened map features, so the
+        map branch only has to learn what the scalars do not already explain.
     """
     if not _TF_AVAILABLE:
         raise ImportError("TensorFlow is required to build the CNN model.")
 
-    inputs = Input(shape=(nx, ny, nch))
+    inputs = Input(shape=(nx, ny, nch), name="sst_maps")
 
     x = Conv2D(32, (3, 3), activation='relu', padding='same',
                kernel_regularizer=l2(rl2))(inputs)
@@ -127,6 +147,12 @@ def build_cnn(
 
     x = Flatten()(x)
     x = Dropout(drop)(x)
+
+    if n_aux > 0:
+        aux_in = Input(shape=(n_aux,), name="aux_scalars")
+        x = Concatenate(name="features_plus_aux")([x, aux_in])
+        output = Dense(1, activation='sigmoid')(x)
+        return Model(inputs=[inputs, aux_in], outputs=output)
 
     output = Dense(1, activation='sigmoid')(x)
 

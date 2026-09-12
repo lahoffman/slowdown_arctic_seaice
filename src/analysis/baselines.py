@@ -27,6 +27,7 @@ from sklearn.metrics import (
 
 from src.cnn.splits import _get_block_indices, block_tvt_split
 from src.data.cesm2le.slowdowns import load_sie_monthly_files
+from src.data.cesm2le.slowdowns_relative import group_mean_trends
 
 METRIC_NAMES = ["AUPRC", "AUROC", "Brier", "Precision", "Recall", "F1",
                 "Accuracy", "MCC", "Threshold", "Prevalence"]
@@ -67,10 +68,14 @@ def load_labels(slowdown_file: Path, start_year: int, end_year: int
 
 
 def load_sie_anomaly(metrics_dir: Path, years: np.ndarray, month: str = "SEP",
-                     variable: str = "sie") -> Tuple[np.ndarray, np.ndarray]:
+                     variable: str = "sie", demean: str = "all"
+                     ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    September SIE at onset year and its anomaly from the ensemble mean.
+    September SIE at onset year and its anomaly from the forced response.
 
+    ``demean='all'`` subtracts the 100-member mean (default, as in the Fig. S3
+    baselines); ``'group'`` subtracts the forcing-group mean (matches the
+    relative labels and the ``--demean group`` SST preprocessing).
     Returns (sie, sie_anom), each (nens, nyear) aligned to ``years``.
     """
     sie_all, yrs_all = load_sie_monthly_files(str(metrics_dir), month,
@@ -80,7 +85,7 @@ def load_sie_anomaly(metrics_dir: Path, years: np.ndarray, month: str = "SEP",
     if not np.array_equal(yrs_all[idx], years):
         raise ValueError("SIE years do not cover the requested onset years.")
     sie = sie_all[:, idx]
-    return sie, sie - np.nanmean(sie, axis=0, keepdims=True)
+    return sie, sie - group_mean_trends(sie, demean)
 
 
 def load_climate_indices_jja(indices_dir: Path, start_year: int, end_year: int

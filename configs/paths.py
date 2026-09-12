@@ -33,6 +33,7 @@ ADDING A NEW PATH
 
 import os
 from pathlib import Path
+from typing import Optional
 
 # =============================================================================
 # ROOT — only thing that changes between environments
@@ -139,6 +140,8 @@ CESM2LE_SST_MONTHLY = {
 
 # Ensemble-mean JJA SST (the forced response, output of src.data.cesm2le.forced)
 CESM2LE_ENSMEAN_JJA = CESM2LE_DIR / 'forced' / 'cesm2le_ensmean_jja_sst.nc'
+# Forcing-group-mean JJA SST (cmip6 = members 0-49, smbb = 50-99; revision step 1.3)
+CESM2LE_GROUPMEAN_JJA = CESM2LE_DIR / 'forced' / 'cesm2le_groupmean_jja_sst.nc'
 
 # SIE trend data (output of CESM2-LE processing pipeline)
 CESM2LE_SIE_TRENDS = CESM2LE_DIR / 'sie_cesmle_linear_decadal_trend_monthly_1990-2100.nc'
@@ -207,35 +210,72 @@ for _d in (MODELS_DIR, ATTRIBUTIONS_DIR, FIGURES_DIR, LOGS_DIR, TVT_SPLITS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 
-def tvt_split_path(split_idx: int) -> Path:
+# -----------------------------------------------------------------------------
+# Tagged experiment outputs (revision step 1.3)
+# -----------------------------------------------------------------------------
+# Every CNN configuration (labels, demeaning, lag, auxiliary input) gets a
+# ``tag``; its splits, models, metrics, attributions and predictions live in a
+# sub-directory of that name so the original (untagged) outputs stay intact.
+#   tag=None        → RESULTS_DIR/tvt_splits/…, RESULTS_DIR/models/…   (original)
+#   tag='rel_base'  → RESULTS_DIR/tvt_splits/rel_base/…, RESULTS_DIR/models/rel_base/…
+
+def _tagged(base: Path, tag: Optional[str]) -> Path:
+    return base / tag if tag else base
+
+
+def tvt_splits_dir(tag: Optional[str] = None) -> Path:
+    return _tagged(TVT_SPLITS_DIR, tag)
+
+
+def models_dir(tag: Optional[str] = None) -> Path:
+    return _tagged(MODELS_DIR, tag)
+
+
+def attributions_dir(tag: Optional[str] = None) -> Path:
+    return _tagged(ATTRIBUTIONS_DIR, tag)
+
+
+def metrics_dir(tag: Optional[str] = None) -> Path:
+    return _tagged(RESULTS_DIR / 'metrics', tag)
+
+
+def cesm2le_predictions_dir(tag: Optional[str] = None) -> Path:
+    """Directory for cached CNN predictions on the CESM2-LE TVT splits."""
+    return _tagged(RESULTS_DIR / 'predictions' / 'cesm2le', tag)
+
+
+def tvt_split_path(split_idx: int, tag: Optional[str] = None) -> Path:
     """Path to the saved TVT split NetCDF for a given split index (0–8).
 
-    The file is produced by scripts/03_cesm2le_tvt_and_train.py via
+    The file is produced by scripts/03_cesm2le_tvt_splits.py via
     src.cnn.splits.save_tvt_split and contains standardised JJA SST arrays
     and binary slowdown labels for the train, validation, and test partitions,
-    plus the normalisation statistics (mu_train, sigma_train).
+    plus the normalisation statistics (mu_train, sigma_train) and, for tagged
+    configurations, optional auxiliary scalar inputs (aux_tr / aux_va / aux_te).
 
     Parameters
     ----------
     split_idx : int
         Zero-based TVT split index (0–8).
+    tag : str, optional
+        Experiment tag (sub-directory).  None = original configuration.
     """
-    return TVT_SPLITS_DIR / f'cesm2le_sst_jja_slowdown_split{split_idx}.nc'
+    return tvt_splits_dir(tag) / f'cesm2le_sst_jja_slowdown_split{split_idx}.nc'
 
 
-def model_path(split_idx: int, run_idx: int) -> Path:
+def model_path(split_idx: int, run_idx: int, tag: Optional[str] = None) -> Path:
     """Path to a saved CNN model (HDF5) for a given split and seed index."""
-    return MODELS_DIR / f'cnn_jja_split{split_idx}_run{run_idx}.h5'
+    return models_dir(tag) / f'cnn_jja_split{split_idx}_run{run_idx}.h5'
 
 
-def attribution_path(split_idx: int, run_idx: int) -> Path:
+def attribution_path(split_idx: int, run_idx: int, tag: Optional[str] = None) -> Path:
     """Path to a saved LRP attribution NetCDF for a given split and seed index."""
-    return ATTRIBUTIONS_DIR / f'lrp_jja_split{split_idx}_run{run_idx}.nc'
+    return attributions_dir(tag) / f'lrp_jja_split{split_idx}_run{run_idx}.nc'
 
 
-def metrics_path(split_idx: int) -> Path:
+def metrics_path(split_idx: int, tag: Optional[str] = None) -> Path:
     """Path to a saved metrics Dataset NetCDF for a given split."""
-    return RESULTS_DIR / 'metrics' / f'cnn_jja_metrics_split{split_idx}.nc'
+    return metrics_dir(tag) / f'cnn_jja_metrics_split{split_idx}.nc'
 
 
 def ersst_predictions_dir(forced_method: str = 'ensmean') -> Path:
@@ -243,7 +283,7 @@ def ersst_predictions_dir(forced_method: str = 'ensmean') -> Path:
     return RESULTS_DIR / 'predictions' / 'ersst' / f'forced_{forced_method}'
 
 
-def climate_indices_split_path(split_idx: int) -> Path:
+def climate_indices_split_path(split_idx: int, tag: Optional[str] = None) -> Path:
     """Path to split-aligned CESM2-LE climate index NetCDF for a given split.
 
     The file is produced by scripts/03_cesm2le_tvt_splits.py and contains
@@ -254,5 +294,7 @@ def climate_indices_split_path(split_idx: int) -> Path:
     ----------
     split_idx : int
         Zero-based TVT split index (0–8).
+    tag : str, optional
+        Experiment tag (sub-directory); the index files follow the SST splits.
     """
-    return TVT_SPLITS_DIR / f'cesm2le_climate_indices_split{split_idx}.nc'
+    return tvt_splits_dir(tag) / f'cesm2le_climate_indices_split{split_idx}.nc'

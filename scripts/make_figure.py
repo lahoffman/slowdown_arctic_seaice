@@ -34,7 +34,6 @@ from src.plotting import paper, style as st
 
 MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 N_SPLITS, N_SEEDS, BLOCK_SIZE, START_YEAR = 9, 5, 10, 1990
-PRED_DIR = paths.RESULTS_DIR / "predictions" / "cesm2le"
 METRIC_KEYS = ["Accuracy", "Precision", "Recall", "F1"]
 
 
@@ -59,8 +58,17 @@ class Data:
         a = self.a
         if a.labels == "original":
             return paths.cesm2le_slowdown_file(a.variable, a.month)
+        mode = "" if a.sigma_mode == "pooled" else f"_{a.sigma_mode}"
         return paths.CESM2LE_SLOWDOWNS_DIR / (
-            f"cesm2le_{a.variable}_slowdown_relative_{a.month}_w{a.window}_s{a.n_sigma:g}_{a.demean}_1990-2100.nc")
+            f"cesm2le_{a.variable}_slowdown_relative_{a.month}_w{a.window}_s{a.n_sigma:g}_{a.demean}{mode}_1990-2100.nc")
+
+    # -- CNN configuration (--tag): splits / predictions / metrics / attributions --
+    @property
+    def tag(self):
+        return self.a.tag
+
+    def pred_dir(self):
+        return paths.cesm2le_predictions_dir(self.tag)
 
     def labels(self):
         return self.get("labels", lambda: xr.open_dataset(self.label_file()).load())
@@ -88,8 +96,8 @@ class Data:
     def single(self):
         def _load():
             k, r = self.a.split, self.a.seed
-            sp = load_tvt_split(paths.tvt_split_path(k))
-            with xr.open_dataset(PRED_DIR / f"cnn_prediction_cesm2le_M{k}_{r}.nc") as ds:
+            sp = load_tvt_split(paths.tvt_split_path(k, self.tag))
+            with xr.open_dataset(self.pred_dir() / f"cnn_prediction_cesm2le_M{k}_{r}.nc") as ds:
                 score = {p: ds[f"y_prob_{p}"].values for p in ("train", "val", "test")}
                 thr = float(ds["threshold"].values)
             hist_p = paths.LOGS_DIR / f"history_split{k}_run{r}.json"
@@ -103,7 +111,7 @@ class Data:
         def _load():
             vals = {k: [] for k in METRIC_KEYS}
             for k in range(N_SPLITS):
-                with xr.open_dataset(paths.metrics_path(k)) as ds:
+                with xr.open_dataset(paths.metrics_path(k, self.tag)) as ds:
                     for m in METRIC_KEYS:
                         vals[m].append(ds["metric_value"].sel(metric=m, split="test").values)
             return {m: np.concatenate(v) for m, v in vals.items()}
@@ -118,16 +126,16 @@ class Data:
             slow = {p: [] for p in ("train", "test")}
             tp = {p: [[] for _ in range(N_SEEDS)] for p in ("train", "test")}
             for k in range(N_SPLITS):
-                sp = load_tvt_split(paths.tvt_split_path(k))
+                sp = load_tvt_split(paths.tvt_split_path(k, self.tag))
                 y = {"train": sp["slow_tr"], "test": sp["slow_te"]}
-                with xr.open_dataset(paths.climate_indices_split_path(k)) as ds:
+                with xr.open_dataset(paths.climate_indices_split_path(k, self.tag)) as ds:
                     for p, suf in (("train", "tr"), ("test", "te")):
                         for key in ps.PHASE_SPECS:
                             phase[p][key].append(ds[f"{key}_{suf}"].values)
                 for p in ("train", "test"):
                     slow[p].append(y[p] == 1)
                 for r in range(N_SEEDS):
-                    pf = PRED_DIR / f"cnn_prediction_cesm2le_M{k}_{r}.nc"
+                    pf = self.pred_dir() / f"cnn_prediction_cesm2le_M{k}_{r}.nc"
                     if not pf.exists():
                         print(f"  [skip] {pf.name}"); continue
                     with xr.open_dataset(pf) as ds:
@@ -135,7 +143,7 @@ class Data:
                     for p in ("train", "test"):
                         thr = cmp.pr_threshold(y[p], sc[p])
                         tp[p][r].append(((sc[p] >= thr) & (y[p] == 1)))
-                    lf = paths.attribution_path(k, r)
+                    lf = paths.attribution_path(k, r, self.tag)
                     if lf.exists():
                         lrp, lat, lon = cmp.load_lrp(lf)
                         acc.add(sp["sst_tr"], y["train"], sc["train"], lrp, lat, lon)
@@ -312,6 +320,11 @@ def parse_args(argv=None):
     p.add_argument("--window", type=int, default=10)
     p.add_argument("--n-sigma", type=float, default=1.0)
     p.add_argument("--demean", default="group", choices=["group", "all"])
+    p.add_argument("--sigma-mode", default="pooled", choices=["pooled", "yearly"],
+                   help="σ mode of the relative label file (step 1.2)")
+    p.add_argument("--tag", default=None,
+                   help="CNN configuration tag (tvt_splits/models/predictions/attributions/<tag>); "
+                        "default: original CNN outputs")
     p.add_argument("--member", type=int, default=6, help="highlighted member (Figs 1, S1)")
     p.add_argument("--split", type=int, default=0, help="split for single-model figures (S4, S5, S7)")
     p.add_argument("--seed", type=int, default=0, help="seed index for single-model figures")

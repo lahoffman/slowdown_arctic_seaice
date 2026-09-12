@@ -4,14 +4,17 @@ Train / Validate / Test data preparation for the JJA SST CNN.
 Pipeline overview
 -----------------
 1. load_jja_sst_demeaned   — load monthly SST (JUN/JUL/AUG), compute seasonal
-                             mean, subtract ensemble mean  →  (nens, nyear, nx, ny)
+                             mean, subtract the forced response (100-member or
+                             forcing-group mean), optionally lagged  →  (nens, nyear, nx, ny)
 2. block_tvt_split         — split ensemble members into T/V/T blocks and flatten
                              the block × time dimensions into a single sample axis
 3. standardize             — compute global mean/std from ocean-only training pixels
                              and apply to all three splits
 4. apply_landmask          — fill land pixels with a sentinel value (-10)
-5. save_tvt_split          — persist one split's arrays + norm stats to NetCDF
+5. save_tvt_split          — persist one split's arrays + norm stats (+ optional
+                             auxiliary scalar inputs) to NetCDF
 6. load_tvt_split          — reload a saved split for downstream use (e.g. XAI)
+7. standardize_aux         — standardise auxiliary scalars with training statistics
 
 Array conventions
 -----------------
@@ -36,6 +39,8 @@ import netCDF4 as nc
 from pathlib import Path
 from typing import Iterator, Optional, Tuple, Dict, List
 
+from src.data.cesm2le.forced import forced_response
+
 
 # =============================================================================
 # 1. Load and prepare JJA SST
@@ -48,10 +53,12 @@ def load_jja_sst_demeaned(
     end_year: int = 2040,
     file_years: str = '199001-210012',
     sst_varname: str = 'sst_mon',
+    demean: str = 'all',
+    sst_lag: int = 0,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Load monthly SST for June, July, August; compute the JJA seasonal mean;
-    subtract the ensemble mean to isolate internal variability.
+    subtract the forced response to isolate internal variability.
 
     Reads one NetCDF per calendar month per member group (produced by
     scripts/01_cesm2le_preprocessing.py via src/data/cesm2le/combine.py and
@@ -79,14 +86,26 @@ def load_jja_sst_demeaned(
         Used only to construct the year index array for slicing.
     sst_varname : str
         Name of the SST variable inside the NetCDF files (default: ``'sst_mon'``).
+    demean : {'all', 'group'}
+        Forced response to subtract: the 100-member mean (``'all'``, original)
+        or the member's own forcing-group mean (``'group'``, revision step 1.3;
+        see ``src.data.cesm2le.forced.forced_response``).
+    sst_lag : int
+        Lead time in years.  The map returned for target year *t* is the JJA
+        SST of year *t − sst_lag* (default 0: same-year JJA, as in the paper).
+        With ``sst_lag=1`` the CNN is asked to *predict* the following
+        September's trend onset rather than classify the concurrent one.
 
     Returns
     -------
     sst_jja_demeaned : np.ndarray
-        Ensemble-mean-removed JJA SST, shape ``(nens, nyear, nx, ny)``.
+        Forced-response-removed JJA SST, shape ``(nens, nyear, nx, ny)``.
     years : np.ndarray
-        Year labels, shape ``(nyear,)``, e.g. ``array([1990, ..., 2040])``.
+        *Target* year labels, shape ``(nyear,)``, e.g. ``array([1990, ..., 2040])``;
+        these are the label / September years, i.e. SST year + ``sst_lag``.
     """
+    if sst_lag < 0:
+        raise ValueError("sst_lag must be >= 0")
 
     jja_months = ['JUN', 'JUL', 'AUG']
 
@@ -95,9 +114,13 @@ def load_jja_sst_demeaned(
     file_end_year   = int(file_years[7:11])
     all_years       = np.arange(file_start_year, file_end_year + 1)
 
-    # Year slice indices within the full file
-    idx_start = int(np.where(all_years == start_year)[0][0])
-    idx_end   = int(np.where(all_years == end_year)[0][0]) + 1   # exclusive
+    # Year slice indices within the full file (SST years = target years − lag)
+    sst_start, sst_end = start_year - sst_lag, end_year - sst_lag
+    if sst_start < file_start_year:
+        raise ValueError(f"start_year − sst_lag = {sst_start} precedes the file start "
+                         f"{file_start_year}; raise --start-year or lower --sst-lag.")
+    idx_start = int(np.where(all_years == sst_start)[0][0])
+    idx_end   = int(np.where(all_years == sst_end)[0][0]) + 1   # exclusive
 
     months_data = []
     for month in jja_months:
@@ -118,13 +141,13 @@ def load_jja_sst_demeaned(
     # JJA mean across the 3 months (axis=0 of the list, not the array axis)
     sst_jja = np.nanmean(months_data, axis=0)   # (nens, nyear, nx, ny)
 
-    # Subtract ensemble mean (removes forced response)
-    ens_mean    = np.nanmean(sst_jja, axis=0, keepdims=True)  # (1, nyear, nx, ny)
-    sst_jja_dem = sst_jja - ens_mean
+    # Subtract the forced response ('all' = 100-member mean, 'group' = forcing group)
+    sst_jja_dem = sst_jja - forced_response(sst_jja, demean)
 
-    years = all_years[idx_start:idx_end]
+    years = all_years[idx_start:idx_end] + sst_lag      # target (label) years
 
-    print(f"Loaded JJA SST: shape {sst_jja_dem.shape}, years {years[0]}-{years[-1]}")
+    print(f"Loaded JJA SST: shape {sst_jja_dem.shape}, target years {years[0]}-{years[-1]}"
+          f" (SST years {sst_start}-{sst_end}, demean='{demean}')")
     return sst_jja_dem, years
 
 
@@ -409,6 +432,8 @@ def save_tvt_split(
     split_idx: int,
     savepath: Path,
     attrs: Optional[dict] = None,
+    aux: Optional[Dict[str, np.ndarray]] = None,
+    aux_names: Optional[List[str]] = None,
 ) -> None:
     """
     Save one TVT split (standardised SST + slowdown labels + norm stats) to NetCDF.
@@ -434,6 +459,13 @@ def save_tvt_split(
         Output file path.  Parent directories are created if they don't exist.
     attrs : dict, optional
         Additional global attributes to store in the NetCDF file.
+    aux : dict, optional
+        Auxiliary scalar inputs (already standardised with training statistics,
+        see ``standardize_aux``): ``{'tr': (ntr, naux), 'va': (nva, naux),
+        'te': (nte, naux)}``.  Stored as ``aux_tr`` / ``aux_va`` / ``aux_te``
+        with an ``aux_names`` attribute.  Omit for the SST-only configuration.
+    aux_names : list of str, optional
+        Name of each auxiliary column, e.g. ``['sie_anom']``.
     """
     savepath = Path(savepath)
     savepath.parent.mkdir(parents=True, exist_ok=True)
@@ -468,6 +500,15 @@ def save_tvt_split(
     )
     if attrs:
         ds.attrs.update(attrs)
+
+    if aux:
+        names = list(aux_names or [f"aux{i}" for i in range(aux["tr"].shape[1])])
+        ds = ds.assign_coords(naux=np.arange(len(names)))
+        for part in ("tr", "va", "te"):
+            ds[f"aux_{part}"] = ((f"n{part}", "naux"), np.asarray(aux[part], np.float32))
+            ds[f"aux_{part}"].attrs["long_name"] = (
+                f"Auxiliary scalar inputs ({part}), standardised with training stats")
+        ds.attrs["aux_names"] = ",".join(names)
 
     # Variable-level metadata
     ds["sst_tr"].attrs["long_name"]    = "Training JJA SST (standardised)"
@@ -520,5 +561,43 @@ def load_tvt_split(filepath: Path) -> Dict:
             "mu_train":    float(ds["mu_train"].values),
             "sigma_train": float(ds["sigma_train"].values),
             "split_idx":   int(ds.attrs.get("split_idx", -1)),
+            "attrs":       dict(ds.attrs),
         }
+        if "aux_tr" in ds:
+            out["aux_tr"] = ds["aux_tr"].values
+            out["aux_va"] = ds["aux_va"].values
+            out["aux_te"] = ds["aux_te"].values
+            out["aux_names"] = str(ds.attrs.get("aux_names", "")).split(",")
     return out
+
+
+# =============================================================================
+# 7. Auxiliary scalar inputs
+# =============================================================================
+
+def standardize_aux(
+    aux_tr: np.ndarray,
+    aux_va: np.ndarray,
+    aux_te: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Standardise auxiliary scalar inputs column-wise with *training* statistics.
+
+    Parameters
+    ----------
+    aux_tr, aux_va, aux_te : np.ndarray
+        Shapes ``(ntr, naux)``, ``(nva, naux)``, ``(nte, naux)`` (1-D arrays are
+        treated as a single column).
+
+    Returns
+    -------
+    aux_tr_std, aux_va_std, aux_te_std, mu, sigma
+        ``mu`` and ``sigma`` have shape ``(naux,)``.
+    """
+    aux_tr, aux_va, aux_te = (np.asarray(a, np.float64).reshape(len(a), -1)
+                              for a in (aux_tr, aux_va, aux_te))
+    mu = np.nanmean(aux_tr, axis=0)
+    sigma = np.nanstd(aux_tr, axis=0)
+    if np.any(sigma == 0):
+        raise ValueError("An auxiliary input has zero training variance.")
+    return ((aux_tr - mu) / sigma, (aux_va - mu) / sigma, (aux_te - mu) / sigma, mu, sigma)

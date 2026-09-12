@@ -79,51 +79,68 @@ Repo facts the plan relies on (verified in the code):
 
 ---
 
-## Phase 1 — Is the Arctic SST signal an initial-condition artifact? (reviewer comments 1, 11)
+## Phase 1 — Does the SST pattern carry information beyond the ice state? (reviewer comments 1, 11; Zach's regression and under-ice comments)
 
-> **Status (2026-09-12) — Step 1.1 run on the server, original labels.** CNN median test F1 ≈ 0.48, AUPRC ≈ 0.50, AUROC ≈ 0.71. Year-climatology alone (no SST, no ice): 0.48 / 0.50 / 0.71. Logistic on SIE anomaly at onset: 0.53 / 0.54 / 0.74. SIE + year: 0.61 / 0.67 / 0.81. Arctic SST index alone ≈ always-positive (F1 0.44). Adding Arctic SST to SIE(t) changes nothing. **Decision gate: not passed.** The CNN is indistinguishable from the forced label epoch and is beaten by the initial ice state. Next: (i) epoch-free labels (`02_cesm2le_slowdowns_relative.py`, per-forcing-group demeaning, window sweep 3–15 yr), (ii) rerun 07 with `--labels-file`, (iii) `cnn_attribution.json` to quantify epoch vs ice-state content of the CNN output, (iv) only then retrain (lag-1 SST, SIE(t) as auxiliary input, group-wise SST demeaning in `splits.py`). Branch B framing (§6.6) is now the default unless (iv) clears `logit_sie_anom` across splits.
+> **Status (2026-09-13) — Step 1.1 complete on both label sets. Decision: retrain on the relative labels.**
+>
+> *Original labels.* CNN median test F1 ≈ 0.48, AUPRC ≈ 0.50, AUROC ≈ 0.71 — indistinguishable from the onset-year climatology (0.48 / 0.50 / 0.71), a predictor that never sees SST or ice. Logistic regression on SIE anomaly at onset: 0.53 / 0.54 / 0.74. SIE + year: 0.61 / 0.67 / 0.81. Arctic SST index alone ≈ always-positive. Conclusion: with the LB22-style labels the CNN's skill is fully explained by the forced label epoch; the labels are unusable for an internal-variability attribution.
+>
+> *Relative labels (`02_cesm2le_slowdowns_relative.py`, w10, 1σ, group demeaning).* Base rate 0.15; onset-year climatology falls below always-positive (F1 0.17 vs 0.26) — the epoch is gone. SIE anomaly alone: F1 0.43, AUPRC 0.41, AUROC 0.76. Arctic SST alone 0.31 / 0.28 / 0.68 (some skill, but adding it to SIE(t) changes nothing). Pacific indices on top of SIE(t) raise AUROC to ~0.79 — the honest upper bound on remote-index information given the ice state. The existing CNN scored against the new labels (a transfer test): 0.35 / 0.30 / 0.70 — above climatology, below the one-variable SIE regression. Window sweep (3–15 yr): base rate flat 1995–2028 for every window, then a roll-off to zero as SIE approaches the floor.
+>
+> *Decisions taken.* (1) The manuscript adopts the relative definition (§2.3 rewritten, tracked). (2) Baselines become Fig. S3 and §3.1 is reframed around them. (3) The CNN is retrained on the relative labels; Steps 1.2–1.8 below are the design of that retrain. (4) The old 1990–2040 onset restriction already removed most of the ice-free floor effect — LH's point — but the roll-off shows onsets ≥ ~2030 (windows to 2049) still sit in the collapsing-variance regime; this is handled at the label stage (Step 1.2), not by changing the training years.
 
-This is the make-or-break phase. Goal: show that skill and the Arctic relevance survive when the trivial "low ice at t ⇒ flatter trend from t" pathway is removed.
+The phase has two halves: 1.1 established the baselines; 1.2–1.8 retrain the CNN so that its skill is measured *beyond* the scalar predictors (SIE anomaly at onset, Arctic SST index, Niño 3.4, IPO). Everything is designed so the answer is unambiguous either way.
 
-**Step 1.1 — Build the scalar baselines (no CNN).** New script `scripts/07_baselines.py` and module `src/analysis/baselines.py`.
-For every split, fit on the training members and evaluate on the test members, using the *same* labels as the CNN:
+**Step 1.1 — DONE. Scalar baselines** (`scripts/07_baselines.py`, `src/analysis/baselines.py`). Always-positive, random-at-prevalence, onset-year climatology, and logistic regressions on SIE anomaly, Arctic SST, Niño 3.4, IPO and their combinations, fit on training members and scored on test members for each of the 9 splits, with member-block bootstrap CIs. Run on both label sets; results in the status block above and in Fig. S3. The CNN-output attribution diagnostic (`cnn_attribution.json`: R² of CNN probability on year-climatology and SIE anomaly) is part of this step.
 
-1. Constant classifier "always slowdown" → F1 = 2p/(1+p) at prevalence p (analytic, but compute it).
-2. Random classifier at rate p (permutation, 1000 draws) → distribution of F1/AUPRC.
-3. Logistic regression on **September SIE anomaly at year t** (ensemble-demeaned). This is the endpoint-leverage baseline.
-4. Logistic regression on the **Arctic JJA SST index** alone.
-5. Logistic regression on Arctic SST index + Niño 3.4 + IPO.
-6. Logistic regression on SIE(t) + Arctic SST index (tests whether SST adds anything beyond ice state).
-7. **Year-climatology baseline**: P(slowdown | onset year) estimated from the training members, applied to test members (no SST at all). Tests whether the CNN is exploiting the non-stationary label base rate (Fig. S12) rather than variability.
-8. Logistic regression on SIE(t) + year (items 3 and 7 combined) — the "nothing about ocean variability" ceiling the CNN must clear.
+**Step 1.2 — Labels for the retrain — CODE DONE, decision pending (run on profx).** Relative definition (`02_cesm2le_slowdowns_relative.py`), 10-yr window, +1σ, demeaned per forcing group. `--sigma-mode both` now writes the pooled and the year-dependent σ label files side by side (`…_group_1990-2100.nc` and `…_group_yearly_1990-2100.nc`) and draws the decision figure `…_sigma_modes.png`: (a) member spread of the trend anomaly by onset year with the ensemble-mean SIE on the right axis, (b) base rate by onset year under each σ, (c) how many of the 100 labels per year differ. Choose the mode whose base rate is flat to 2040; if neither is — the roll-off from ~2030 is the ice-free floor reaching into windows that end by 2049 — restrict onsets with `03_cesm2le_tvt_splits.py --end-year 2030` (the cap is marked on the figure). Document the choice in §2.3. Split-aligned climate indices are regenerated by `03` for every tag (or `03 --climate-indices-only --tag <tag>`); `make_figure.py` takes `--sigma-mode yearly` for Figs S1/S2.
 
-Inputs for items 3, 7, 8 are already on disk (`results/` slowdown label files + SIE metrics from `01_cesm2le_preprocessing.py`); Fig. S2h shows the SIE(t) separation is large. Do these first.
+```
+python scripts/02_cesm2le_slowdowns_relative.py --sigma-mode both        # labels + sigma_modes figure
+```
 
-Save to `results/baselines/baselines_split{k}.nc` with the same metric names as `METRIC_NAMES`. Output a single table (metric × model × split) that becomes new **main-text Table 1 / Figure**.
+**Step 1.3 — SST preprocessing to match the labels — CODE DONE (smoke-tested on synthetic data; run on profx).**
+- *Group-wise forced response.* `src/data/cesm2le/forced.py::forced_response(sst, demean='all'|'group')` is the single definition, used on the fly by `splits.py::load_jja_sst_demeaned(demean=…)` and persisted by `02_cesm2le_forced.py` (now also writes `cesm2le_groupmean_jja_sst.nc` and two diagnostics in `results/figures/diagnostics/`: `forced_group_difference.png` — SMBB − CMIP6 forced JJA SST map and the Arctic-mean series per group; `forced_demeaned_arctic.png` — member Arctic SST anomalies under both demeanings). Land sentinel and global standardisation unchanged.
+- *Lag.* `03 --sst-lag L` uses JJA of year *t − L* for target year *t* (needs `--start-year 1990+L`); the split file records `sst_years` and `target_years`.
+- *Auxiliary input.* `03 --aux sie_anom` stores the onset-year September SIE anomaly (demeaned the same way as the SST, standardised with training statistics) as `aux_tr/va/te`; `model.py::build_cnn(n_aux=…)` concatenates it with the flattened map features before the output layer (n_aux = 0 reproduces the original network; old `.h5` files still load); `04`/`05`/`06` detect the auxiliary columns from the split file (`--no-aux` to ignore). LRP (`compute_lrp_z`) accepts `[maps, aux]` and returns map relevance.
+- *Tags.* `configs/paths.py` path helpers take `tag`; `03`/`04`/`05`/`06` take `--tag` and write to `tvt_splits/<tag>`, `models/<tag>`, `metrics/<tag>`, `attributions/<tag>`, `predictions/cesm2le/<tag>`. `07_baselines.py --cnn-tag <tag> --demean group` scores a tagged configuration on the Fig. S3 axes; `make_figure.py --tag <tag>` draws every CNN-based figure for it. Untagged = original outputs, untouched.
 
-**Step 1.2 — Lagged-input experiment.** Add a `sst_lag` argument to `load_jja_sst()` and `build_split()` in `src/cnn/splits.py` (default 0 = current behaviour). Regenerate splits with `sst_lag=1` (JJA of year t−1 predicts trend starting September t) to `results/tvt_splits/..._lag1_split{k}.nc`, retrain (`04_cesm2le_cnn_train.py --tag lag1`), predict, LRP. Compare F1/AUPRC/AUROC and the Arctic-vs-tropics relevance fraction to the lag-0 run.
+```
+python scripts/02_cesm2le_forced.py                                       # forced fields + diagnostics
+LBL=$SLOWDOWN_DATA_ROOT/cesm2le/slowdowns/cesm2le_sie_slowdown_relative_SEP_w10_s1_group_1990-2100.nc
+python scripts/03_cesm2le_tvt_splits.py --labels-file $LBL --demean group --tag rel_base
+python scripts/03_cesm2le_tvt_splits.py --labels-file $LBL --demean group --aux sie_anom --tag rel_aux
+python scripts/03_cesm2le_tvt_splits.py --labels-file $LBL --demean group --aux sie_anom --sst-lag 1 --start-year 1991 --tag rel_lag1
+```
+(Add `--end-year 2030` to all three if 1.2 chooses the onset cap; swap in the `_yearly` label file if it chooses the yearly σ.)
 
-**Step 1.3 — Trend-window-without-the-first-year experiment.** In `compute_decadal_trends_ensemble()` add `skip_first: int = 0`; relabel with the trend fitted over years t+1 … t+9 (keeping the same onset-year indexing so the SST input is unchanged). Retrain with tag `skip1`. If skill collapses to the baseline in both 1.2 and 1.3, the result is the endpoint artifact and the paper must be reframed (see Phase 6, branch B).
+*Manuscript figures affected by 1.2/1.3.* Now: Fig. S1 (definition; regenerate with the chosen σ mode / label file) and Fig. S2 (label statistics), §2.1 Methods (forced response removed per forcing group; the observations then need a choice of reference group or the 100-member mean — Phase 6.1) and §2.3 (σ choice, onset range). After 1.4: every CNN-based figure — Figs 2, 3, S4–S12 — is regenerated with `make_figure.py --tag rel_aux` (or whichever configuration 1.8 selects), Fig. S3 gains the retrained CNN bars, Fig. 4 waits for Phase 6.
 
-**Step 1.4 — Partial-out the initial ice state.** Regress the binary label (or the continuous trend) on SIE(t) across the training set, and train the CNN on the residualised target (continuous version, see 1.5) or with SIE(t) supplied as an auxiliary scalar input so the CNN can only earn skill *beyond* it. Report the change in relevance maps.
+**Step 1.4 — Train three configurations, same architecture, 9 splits × 5 seeds each.**
+- `base`: JJA SST of the onset year (as now), on the new labels. Reference run.
+- `aux`: same SST plus the September SIE anomaly at onset as a scalar input concatenated before the dense layer. The CNN can then only earn skill *beyond* the ice state. Headline configuration.
+- `lag1`: JJA SST of the year *before* onset (+ the SIE scalar). Tests whether SST-pattern skill exists at one year lead, i.e. whether "predict" is defensible.
+(Absorbs the earlier lag-1, skip-first-year and residualised-target ideas.)
 
-**Step 1.5 (recommended, addresses the "future work" paragraph too) — Continuous target.** Add a regression head option to `build_cnn()` (`n_classes=1`, linear output, MSE/Huber loss) predicting the decadal trend anomaly relative to the ensemble mean. Compare against a linear regression on SIE(t). This side-steps the arbitrary 1σ threshold entirely and makes skill quantification cleaner (r², MSE skill score vs climatology and vs SIE(t) persistence).
+**Step 1.5 — Evaluate every configuration on the Fig. S3 axes.** `06_cnn_predict_cesm2le.py` then `07_baselines.py --labels-file <relative> --tag <config>` for each, so all three land next to the same baselines. Member-block bootstrap (Phase 3.2). The bar to clear is `logit_sie_pacific` (SIE + Niño 3.4 + IPO, AUROC ≈ 0.79), not always-positive.
 
-**Step 1.6 — Ice-covered cells (Zach's under-ice SST question).** In CESM2 the SST in ice-covered cells is pinned near freezing, so the Arctic SST anomaly map is partly an ice-concentration map. Build a variant of the splits in which cells with `aice > 0.15` in JJA of the onset year are set to the land sentinel (or to the ensemble-mean value, i.e. zero anomaly), retrain with tag `openwater`, and repeat the Arctic occlusion test (Phase 5.3). If skill and Arctic relevance survive using open-water SST only, the "ocean preconditioning" language is earned; if not, the signal is ice cover. Also document what ERSSTv5/OISST assign under ice, because the observational input inherits whatever convention the product uses.
+**Step 1.6 — Under-ice SST (Zach's comment).** In CESM2 the SST in ice-covered cells is pinned near freezing, so the Arctic SST anomaly map is partly an ice-concentration map. Train an `openwater` variant of `aux` in which cells with `aice > 0.15` in JJA of the onset year are set to zero anomaly, and repeat the Arctic occlusion test (Phase 5.3). If skill and Arctic relevance survive on open-water SST alone, the "ocean preconditioning" language is earned; if not, the Arctic signal is ice cover. Also document what ERSSTv5 / OISST assign under ice, since the observational input inherits the product's convention.
 
-**Decision gate.** Proceed to the "physically meaningful preconditioning" framing only if, with lag-1 SST *or* skip-first labels, the CNN (or logistic Arctic-SST model) still beats the SIE(t) baseline with non-overlapping block-bootstrap CIs (Phase 3). Otherwise, reframe (Phase 6B).
+**Step 1.7 — Attribution on the retrained models.** `05_cesm2le_lrp.py` on `aux`, `lag1` and `openwater`; TP composites (Fig. 2) and the occlusion test (Phase 5.3) on the same models. With SIE(t) supplied as a scalar, Arctic relevance in the SST map can no longer be "the ice edge"; whatever remains there or in the Pacific is the pattern information.
+
+**Step 1.8 — Decision gate.** Branch A: `aux` beats `logit_sie_pacific` on AUROC/AUPRC across most splits → the paper claims SST-pattern predictability of Arctic SIE slowdowns beyond the ice state, with `lag1` deciding whether it is prediction or diagnosis. Branch B: it does not → the contribution is methodological (Fig. S3 as the central result, Phase 6.6). Either branch is publishable; §3.1 was written to hold under both. Phase 6 and 7 rewriting waits for this gate, except the branch-independent items (6.1, 6.2, 6.7, clean-up).
 
 ---
 
 ## Phase 2 — Skill reporting and baselines in the main text (comments 2, 12)
 
-**Step 2.1 — Replace "exceeds random" with a proper skill figure.** New main-text figure (replacing current Fig. S5 role): per-split box/strip plots of F1, AUPRC and AUROC on the test set for the CNN, with horizontal lines for always-positive, random (permutation 95th percentile), logistic-SIE(t), and logistic-Arctic-SST. Use `results/metrics/cnn_jja_metrics_split{k}.nc` + `results/baselines/`.
+**Step 2.1 — DONE (Fig. S3, `make_figure.py S3`).** Replace "exceeds random" with a proper skill figure. New main-text figure (replacing current Fig. S5 role): per-split box/strip plots of F1, AUPRC and AUROC on the test set for the CNN, with horizontal lines for always-positive, random (permutation 95th percentile), logistic-SIE(t), and logistic-Arctic-SST. Use `results/metrics/cnn_jja_metrics_split{k}.nc` + `results/baselines/`.
 
 **Step 2.2 — Report precision and recall separately** at the PR-optimal threshold (already computed in `06_cnn_predict_cesm2le.py`), and state the threshold selection rule in Methods (it is currently chosen on the training set — say so).
 
 **Step 2.3 — Permutation significance test.** Shuffle labels *by ensemble member × contiguous year block* (not per sample; see Phase 3) 1000 times, retrain a cheap surrogate (logistic on CNN penultimate features, or simply recompute F1 of the fixed CNN against shuffled labels) to get the null F1 distribution. Report the p-value.
 
-**Step 2.4 — Fix units/language.** F1 = 0.48, not 48%. Replace "predict" with "classify/diagnose" wherever the input is contemporaneous with the window start (unless Phase 1.2 becomes the headline configuration, in which case "predict at one-year lead" is defensible).
+**Step 2.4 — Fix units/language.** F1 = 0.48, not 48%. Replace "predict" with "classify/diagnose" wherever the input is contemporaneous with the window start (unless the `lag1` configuration of Step 1.4 shows skill, in which case "predict at one-year lead" is defensible).
 
 ---
 
@@ -139,15 +156,15 @@ Save to `results/baselines/baselines_split{k}.nc` with the same metric names as 
 
 ## Phase 4 — Slowdown definition robustness and label contamination (comment 4)
 
-**Step 4.1 — Ice-free floor screening.** In `02_cesm2le_slowdowns.py`, add a flag to mark any window in which the member's September SIE falls below 1 M km² (or the ensemble-mean reaches a chosen fraction of its 1990 value). Plot slowdown frequency vs onset year (new Fig. S2 panel). If frequency rises toward 2040, either (a) end the analysis at an onset year where all members are still well above the floor (e.g., 2030), or (b) drop screened windows. Retrain with the cleaned labels; report the new base rate (currently 28% vs ~16% by construction in observations — explain the difference explicitly in the text).
+**Step 4.1 — SUPERSEDED by the relative definition (see Step 1.2).** Ice-free floor screening. In `02_cesm2le_slowdowns.py`, add a flag to mark any window in which the member's September SIE falls below 1 M km² (or the ensemble-mean reaches a chosen fraction of its 1990 value). Plot slowdown frequency vs onset year (new Fig. S2 panel). If frequency rises toward 2040, either (a) end the analysis at an onset year where all members are still well above the floor (e.g., 2030), or (b) drop screened windows. Retrain with the cleaned labels; report the new base rate (currently 28% vs ~16% by construction in observations — explain the difference explicitly in the text).
 
 **Step 4.2 — Sensitivity sweep.** Parameterise and rerun labels for: threshold at 0.5σ, 1σ, 1.5σ; window 8, 10, 12, 15 yr; SST season JJA vs MJJ vs annual. Cheap version: rerun only the logistic-regression baselines (Phase 1.1) across this grid; expensive version: retrain the CNN at 1σ/10yr plus one alternative. Summarise as a heat-map Figure S.
 
-**Step 4.3 — State the threshold construction explicitly.** Write out in Methods that trends are negative, so f = (μ+σ)/μ < 1 and the model threshold is `f × ensemble-mean trend(t)`, which is time-varying, exactly as in LB22 (their f = 0.44 for GMST). Add the observed values of μ, σ, f, and the resulting model base rate next to LB22's, with the explanation for the difference. Justify (or drop) the 1990 "slowdown" in observations — consider defining slowdowns only relative to the *preceding* decades' rate, or adding an absolute criterion (e.g., trend not significantly different from zero, following England et al. 2025) as a sensitivity.
+**Step 4.3 — DONE in §2.3 (tracked change).** State the threshold construction explicitly. Write out in Methods that trends are negative, so f = (μ+σ)/μ < 1 and the model threshold is `f × ensemble-mean trend(t)`, which is time-varying, exactly as in LB22 (their f = 0.44 for GMST). Add the observed values of μ, σ, f, and the resulting model base rate next to LB22's, with the explanation for the difference. Justify (or drop) the 1990 "slowdown" in observations — consider defining slowdowns only relative to the *preceding* decades' rate, or adding an absolute criterion (e.g., trend not significantly different from zero, following England et al. 2025) as a sensitivity.
 
-**Step 4.4 — Biomass-burning forcing subset (Zach).** CESM2-LE members 1–50 use the CMIP6 biomass-burning emissions with spurious interannual variability over 1997–2014; members 51–100 use the smoothed version. `03_cesm2le_tvt_splits.py` already loads by `MEMBER_GROUPS = ['first50', 'last50']`. Recompute the ensemble-mean trend and slowdown labels separately for each 50-member group (Fig. S1c–d equivalent), report the base rate and the 2005–2015 label peak for each, and train a `last50`-only CNN ensemble (5 blocks → 3 train / 1 val / 1 test). If the forced slowdown and the label peak largely vanish with smoothed forcing, the current labels are contaminated by the forcing artifact and the `last50` results should become the headline, with the full-ensemble results as a sensitivity.
+**Step 4.4 — PARTLY DONE (labels demeaned per forcing group; frequency-by-group printed by `02_cesm2le_slowdowns_relative.py`). Remaining: the last50-only CNN as an optional sensitivity (see Optional / future work).** Biomass-burning forcing subset (Zach). CESM2-LE members 1–50 use the CMIP6 biomass-burning emissions with spurious interannual variability over 1997–2014; members 51–100 use the smoothed version. `03_cesm2le_tvt_splits.py` already loads by `MEMBER_GROUPS = ['first50', 'last50']`. Recompute the ensemble-mean trend and slowdown labels separately for each 50-member group (Fig. S1c–d equivalent), report the base rate and the 2005–2015 label peak for each, and train a `last50`-only CNN ensemble (5 blocks → 3 train / 1 val / 1 test). If the forced slowdown and the label peak largely vanish with smoothed forcing, the current labels are contaminated by the forcing artifact and the `last50` results should become the headline, with the full-ensemble results as a sensitivity.
 
-**Step 4.5 — Threshold degeneracy guard.** Because the threshold is `f × ensemble-mean trend(t)`, it collapses to ~0 where the forced trend flattens (Fig. S1d). Add a floor: define the model threshold as `max(f × ens-mean trend(t), μ_m + σ_m)` where μ_m, σ_m come from the pooled member trends over 1990–2040, or simply report how many labels change when the 2005–2015 windows are treated with the pooled threshold. State the choice in Methods.
+**Step 4.5 — SUPERSEDED by the relative definition.** Threshold degeneracy guard. Because the threshold is `f × ensemble-mean trend(t)`, it collapses to ~0 where the forced trend flattens (Fig. S1d). Add a floor: define the model threshold as `max(f × ens-mean trend(t), μ_m + σ_m)` where μ_m, σ_m come from the pooled member trends over 1990–2040, or simply report how many labels change when the 2005–2015 windows are treated with the pooled threshold. State the choice in Methods.
 
 ---
 
@@ -205,18 +222,25 @@ Save to `results/baselines/baselines_split{k}.nc` with the same metric names as 
 
 ---
 
+## Optional / future work (not needed for the revision)
+
+- **Continuous target.** Regression head on `build_cnn()` predicting the decadal trend anomaly relative to the group mean (MSE/Huber), compared against a linear regression on SIE(t). Removes the 1σ threshold entirely and gives cleaner skill scores (r², MSE skill vs climatology and vs SIE(t) persistence). Fits the "future work" paragraph in the Conclusions.
+- **last50-only CNN** (smoothed biomass-burning members) as a sensitivity on the forcing artifact, once the `aux` results are in.
+- **Shorter windows** (3–7 yr) as a check on the re-emergence-timescale discussion; the label statistics are already available from the window sweep.
+- **Atmospheric composites** (Z200, U200) concurrent with correct predictions (Zach's suggestion); SI only.
+
 ## Suggested execution order and rough effort
 
-| Order | Steps | Retraining? | Effort |
-|---|---|---|---|
-| 1 | 1.1 baselines (incl. SIE(t) and year-climatology), 3.1 event counts, 4.1 frequency-vs-year, 4.4 first50/last50 label comparison | no | 2 days |
-| 2 | 1.2 lag-1, 1.3 skip-first labels, 1.6 open-water-only input | yes (3 × 45 CNNs) | 3–4 days compute |
-| 3 | 6.1 detrending comparison, 6.3 recount, 6.7 obs LRP composites | LRP only | 1–2 days |
-| 4 | 5.3 occlusion + second XAI method, 5.1 recondition (all-slowdown numbers to main text) | LRP only | 2 days |
-| 5 | 3.2 block bootstrap, 5.2 VE definition, 4.5 threshold guard | no | 1 day |
-| 6 | 4.2 sensitivity sweep (window, σ, season; logistic only) | no | 1 day |
-| 7 | 4.4 last50-only CNN retrain; 1.5 regression head (optional) | yes | 3 days |
-| 8 | 6.2 OISST v2.1 download, regrid, rerun obs pipeline | no | 1–2 days (parallelisable) |
-| 9 | Rewrite: Discussion/Conclusions split, Key Points, abstract hedge, SI/repo housekeeping (Phases 6.6, 7) | — | 1 week |
+| Order | Steps | Retraining? | Effort | Status |
+|---|---|---|---|---|
+| 1 | 1.1 baselines on both label sets; relative labels + window sweep; Fig. S3; §2.3 and §3.1 rewritten | no | — | **done** |
+| 2 | 1.2 labels (σ mode / onset range); 1.3 group-wise SST demeaning, `--sst-lag`, auxiliary input, `--tag` | no | 1 day | code done; run `02 --sigma-mode both`, `02_forced`, `03 --tag …` on profx and pick σ mode |
+| 3 | 1.4 train `base`, `aux`, `lag1` (3 × 45 CNNs); 1.5 predict + baselines per config; 1.6 `openwater` variant | yes | 4–5 days compute | next |
+| 4 | 1.7 LRP on retrained models; 5.3 occlusion + second XAI method; 5.1 all-slowdown conditioning | LRP only | 2 days | |
+| 5 | 1.8 decision gate → Branch A or B; 6.6 rewrite | — | — | |
+| 6 | 6.1 detrending comparison, 6.3 recount, 6.7 obs LRP composites (on the retrained `aux` models) | LRP only | 1–2 days | |
+| 7 | 3.2 block bootstrap, 5.2 VE in main text, 4.2 sensitivity sweep (logistic only) | no | 1–2 days | |
+| 8 | 6.2 OISST v2.1 (parallel); optional items as time allows | partly | 2–3 days | parallel |
+| 9 | Phase 7 clean-up: Discussion/Conclusions split, Key Points, SI numbering, repo configs | — | 1 week | |
 
-Everything in rows 1, 3 and 5 can be done from cached outputs and settles most of the factual disputes (and most of Zach's analysis questions) before any GPU time is spent. Row 1 is the decision gate: the SIE(t) and year-climatology baselines will show within a day whether the CNN is learning ocean variability or the initial ice state plus the forced epoch.
+Row 1 answered the original decision gate: the CNN was learning the forced epoch plus the initial ice state. Rows 2–5 are the retrain that decides between Branch A and B; nothing in Phase 6 or 7 should be written until 1.8 is resolved, except the parts that are branch-independent (6.1, 6.2, 6.7, and the clean-up items).

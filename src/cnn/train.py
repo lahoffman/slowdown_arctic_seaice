@@ -10,6 +10,9 @@ train_model            : Compile and fit the CNN; returns the fitted model and
                          training history.
 predict_splits         : Run inference on all three splits; returns predicted
                          probabilities.
+model_inputs           : Build the Keras input(s) for one partition of a saved
+                         TVT split — the map array, or ``[maps, aux]`` when the
+                         split carries auxiliary scalars (revision step 1.3).
 collect_metrics_dataset: Evaluate metrics across splits and seeds, pack into an
                          xarray Dataset.
 
@@ -69,6 +72,33 @@ def set_seed(seed: int) -> None:
 
 
 # =============================================================================
+# Inputs from a saved TVT split
+# =============================================================================
+
+def model_inputs(split: Dict, part: str, use_aux: Optional[bool] = None):
+    """
+    Keras input(s) for one partition (``'tr'``, ``'va'`` or ``'te'``) of a
+    split dict returned by ``src.cnn.splits.load_tvt_split``.
+
+    Returns the map array ``(n, nx, ny, 1)`` or, when the split carries
+    auxiliary scalars (``aux_tr`` …) and ``use_aux`` is not ``False``, the
+    list ``[maps, aux]``.  ``use_aux=None`` means "use them if present".
+    """
+    maps = split[f'sst_{part}'][:, :, :, np.newaxis].astype(np.float32)
+    has_aux = f'aux_{part}' in split
+    if use_aux is None:
+        use_aux = has_aux
+    if use_aux and not has_aux:
+        raise KeyError(f"Split has no auxiliary inputs for partition '{part}'.")
+    return [maps, split[f'aux_{part}'].astype(np.float32)] if use_aux else maps
+
+
+def n_aux_inputs(split: Dict) -> int:
+    """Number of auxiliary scalar columns stored in a split (0 if none)."""
+    return int(split['aux_tr'].shape[1]) if 'aux_tr' in split else 0
+
+
+# =============================================================================
 # Class weights
 # =============================================================================
 
@@ -117,12 +147,13 @@ def train_model(
     ----------
     model : tf.keras.Model
         Uncompiled Keras model (from ``build_cnn``).
-    x_train : np.ndarray
-        Training inputs, shape ``(n_tr, nx, ny, nch)``.
+    x_train : np.ndarray or list
+        Training inputs, shape ``(n_tr, nx, ny, nch)``, or ``[maps, aux]``
+        for a model built with ``n_aux > 0`` (see ``model_inputs``).
     y_train : np.ndarray
         Training binary labels, shape ``(n_tr,)``.
-    x_val : np.ndarray
-        Validation inputs, shape ``(n_va, nx, ny, nch)``.
+    x_val : np.ndarray or list
+        Validation inputs, shape ``(n_va, nx, ny, nch)`` (or ``[maps, aux]``).
     y_val : np.ndarray
         Validation binary labels, shape ``(n_va,)``.
     config : dict, optional
@@ -211,9 +242,9 @@ def predict_splits(
     ----------
     model : tf.keras.Model
         Trained Keras model.
-    x_tr, x_va, x_te : np.ndarray
+    x_tr, x_va, x_te : np.ndarray or list
         Inputs for training, validation, and test splits, each shape
-        ``(n_samples, nx, ny, nch)``.
+        ``(n_samples, nx, ny, nch)`` or ``[maps, aux]`` for two-input models.
 
     Returns
     -------

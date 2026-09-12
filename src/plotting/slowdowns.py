@@ -226,3 +226,74 @@ def plot_window_sweep(datasets: Dict[int, xr.Dataset], out_png,
     ax.legend(frameon=False, ncol=3)
     st.tidy(ax)
     st.save(fig, out_png)
+
+
+def plot_sigma_mode_comparison(ds_pooled: xr.Dataset, ds_yearly: xr.Dataset, sie: np.ndarray,
+                               years: np.ndarray, out_png,
+                               pool_years: Tuple[int, int] = (1990, 2040),
+                               cap_year: int = 2030) -> None:
+    """
+    Step 1.2 decision figure — pooled σ vs year-dependent σ for the relative labels.
+
+    (a) trend-anomaly spread across members by onset year: raw σ(t), the 5-yr
+        smoothed σ used by ``sigma_mode='yearly'`` and the pooled constant;
+        group-mean SIE on the right axis shows where the ice approaches zero.
+    (b) slowdown frequency by onset year under each σ mode (all members) and
+        the two forcing groups for the yearly mode.
+    (c) how many of the 100 labels per onset year differ between the modes.
+    The training window and the optional onset cap are shaded / marked.
+    """
+    tyrs = ds_pooled["nyr"].values
+    lab_p, lab_y = ds_pooled["slowdown"].values, ds_yearly["slowdown"].values
+    anom = ds_pooled["trend_anom"].values
+    n_sigma = float(ds_pooled.attrs["n_sigma"])
+    xmax = min(tyrs[-1], 2060)
+
+    fig, axes = plt.subplots(3, 1, figsize=(9, 10.5), sharex=True)
+
+    ax = axes[0]
+    ax.plot(tyrs, np.nanstd(anom, axis=0), color=st.MUTED, lw=1, label="σ(t), raw")
+    ax.plot(tyrs, ds_yearly["sigma"].values, color=st.ORANGE, lw=2, label="σ(t), 5-yr smoothed (yearly mode)")
+    ax.plot(tyrs, ds_pooled["sigma"].values, color=st.BLUE, lw=2, ls="--",
+            label=f"σ pooled {pool_years[0]}–{pool_years[1]}")
+    ax.set_ylabel("spread of trend anomalies\n[M km² yr⁻¹]")
+    ax.set_title("(a) member spread of the decadal-trend anomaly by onset year", loc="left")
+    ax2 = ax.twinx()
+    isel = (years >= tyrs[0]) & (years <= xmax)
+    ax2.plot(years[isel], sie.mean(0)[isel], color=st.INK, lw=1, alpha=0.6,
+             label="ensemble-mean Sept SIE (right axis)")
+    ax2.set_ylabel("ensemble-mean Sept SIE [M km²]", color=st.INK)
+    ax2.spines["top"].set_visible(False)
+    h1, l1 = ax.get_legend_handles_labels(); h2, l2 = ax2.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, frameon=False, loc="upper right")
+
+    ax = axes[1]
+    fp, fy = frequency_by_year(lab_p, tyrs), frequency_by_year(lab_y, tyrs)
+    ax.plot(tyrs, fp["all"], color=st.BLUE, lw=2.2, label="pooled σ — all members")
+    ax.plot(tyrs, fy["all"], color=st.ORANGE, lw=2.2, label="yearly σ — all members")
+    if "cmip6" in fy:
+        ax.plot(tyrs, fy["cmip6"], color=st.C_CMIP6, lw=1, ls=":", label="yearly — CMIP6-BB")
+        ax.plot(tyrs, fy["smbb"], color=st.C_SMBB, lw=1, ls=":", label="yearly — SMBB")
+    ax.set_ylim(0, 0.6)
+    ax.set_ylabel("fraction of members flagged")
+    ax.set_title(f"(b) slowdown frequency by onset year (threshold {n_sigma:g}σ)", loc="left")
+    ax.legend(frameon=False, ncol=2)
+
+    ax = axes[2]
+    diff = (lab_p != lab_y).sum(0)
+    ax.bar(tyrs, diff, color=st.MUTED, width=0.8)
+    ax.set_ylabel("labels differing\n(of 100 members)")
+    ax.set_xlabel("onset year of trend window")
+    ax.set_title(f"(c) pooled vs yearly disagreement — {int((lab_p != lab_y)[:, (tyrs >= pool_years[0]) & (tyrs <= pool_years[1])].sum())} "
+                 f"of {100 * ((tyrs >= pool_years[0]) & (tyrs <= pool_years[1])).sum()} training-window labels", loc="left")
+
+    for ax in axes:
+        ax.axvspan(pool_years[0], pool_years[1], color=st.GRID, alpha=0.35, zorder=0)
+        ax.axvline(cap_year, color=st.INK, lw=1, ls="-.")
+        ax.set_xlim(tyrs[0], xmax)
+        st.tidy(ax)
+    axes[2].text(cap_year + 0.5, axes[2].get_ylim()[1] * 0.95, f"optional onset cap {cap_year}",
+                 fontsize=plt.rcParams["legend.fontsize"], va="top")
+    fig.suptitle(f"Relative labels — pooled vs year-dependent σ (window {int(ds_pooled.attrs['window'])} yr, "
+                 f"demean={ds_pooled.attrs['demean']})")
+    st.save(fig, out_png)

@@ -6,28 +6,42 @@ Build and save the 9 train / validate / test data splits for the JJA SST CNN.
 
 For each of the 9 splits this script:
 1. Loads JJA (June–July–August) mean SST from the monthly files produced by
-   scripts/01_cesm2le_preprocessing.py.
-2. Loads September slowdown labels from the classification file produced by
-   scripts/02_cesm2le_slowdowns.py.
+   scripts/01_cesm2le_preprocessing.py, removes the forced response
+   (``--demean all`` = 100-member mean, ``--demean group`` = forcing-group
+   mean) and optionally lags it (``--sst-lag``).
+2. Loads September slowdown labels — the original file from
+   scripts/02_cesm2le_slowdowns.py or any file given with ``--labels-file``
+   (e.g. the relative labels from scripts/02_cesm2le_slowdowns_relative.py).
 3. Aligns SST and label years.
 4. Splits the 100-member ensemble into train / validate / test blocks.
 5. Standardises SST using global ocean-only statistics from the training data.
 6. Applies the land mask (sets land pixels to -10).
-7. Saves each split to a NetCDF file under DATA_ROOT/results/tvt_splits/.
+7. Optionally adds auxiliary scalar inputs (``--aux sie_anom``: September SIE
+   anomaly at the onset year, standardised with training statistics).
+8. Saves each split to a NetCDF file under DATA_ROOT/results/tvt_splits[/<tag>]/.
 
 Outputs (one per split, k = 0 … 8)
 ------------------------------------
-    DATA_ROOT/results/tvt_splits/cesm2le_sst_jja_slowdown_split{k}.nc
+    DATA_ROOT/results/tvt_splits[/<tag>]/cesm2le_sst_jja_slowdown_split{k}.nc
 
     Each file contains:
         sst_tr, sst_va, sst_te    — standardised, land-masked JJA SST
         slow_tr, slow_va, slow_te — binary September slowdown labels (0/1)
         mu_train, sigma_train     — normalisation statistics for downstream XAI
+        aux_tr, aux_va, aux_te    — (optional) auxiliary scalar inputs
+    Global attrs record labels_file, demean, sst_lag, aux and tag so that the
+    downstream scripts (04/05/06) can pick the right configuration.
 
 Usage
 -----
-    python scripts/03_cesm2le_tvt_splits.py                # full pipeline
+    python scripts/03_cesm2le_tvt_splits.py                # original configuration (untagged)
     python scripts/03_cesm2le_tvt_splits.py --climate-indices-only  # indices only
+
+    # Revision step 1.2/1.3 configurations (relative labels, group demeaning):
+    LBL=$SLOWDOWN_DATA_ROOT/cesm2le/slowdowns/cesm2le_sie_slowdown_relative_SEP_w10_s1_group_1990-2100.nc
+    python scripts/03_cesm2le_tvt_splits.py --labels-file $LBL --demean group --tag rel_base
+    python scripts/03_cesm2le_tvt_splits.py --labels-file $LBL --demean group --aux sie_anom --tag rel_aux
+    python scripts/03_cesm2le_tvt_splits.py --labels-file $LBL --demean group --aux sie_anom --sst-lag 1 --tag rel_lag1
 
 Author: Lauren Hoffman  <lhoffma2@ucsc.edu>
 """
@@ -49,9 +63,11 @@ from src.cnn.splits import (
     iter_splits,
     block_tvt_split,
     standardize,
+    standardize_aux,
     apply_landmask,
     save_tvt_split,
 )
+from src.analysis.baselines import load_sie_anomaly
 
 
 # =============================================================================
@@ -92,17 +108,17 @@ def load_landmask() -> np.ndarray:
 
 
 def load_slowdown_labels(
-    variable: str,
-    month: str,
+    fpath: Path,
     start_year: int,
     end_year: int,
 ) -> np.ndarray:
     """
     Load binary September slowdown labels for the requested year range.
 
-    Reads the file produced by scripts/02_cesm2le_slowdowns.py.  The ``nyr``
-    coordinate in that file is the *starting year* of each 10-year trend
-    window, so selecting years [start_year, end_year] gives the label for
+    ``fpath`` is the original file from scripts/02_cesm2le_slowdowns.py or a
+    relative-label file from scripts/02_cesm2le_slowdowns_relative.py; both
+    store ``slowdown(nens, nyr)`` where ``nyr`` is the *starting year* of each
+    trend window, so selecting years [start_year, end_year] gives the label for
     the September SIE trend beginning in each of those years.
 
     Returns
@@ -110,11 +126,11 @@ def load_slowdown_labels(
     slowdown : np.ndarray
         Binary array, shape ``(nens, nyear)``.  1 = slowdown, 0 = normal.
     """
-    fpath = paths.cesm2le_slowdown_file(variable, month)
+    fpath = Path(fpath)
     if not fpath.exists():
         raise FileNotFoundError(
             f"Slowdown file not found:\n  {fpath}\n"
-            f"Run scripts/02_cesm2le_slowdowns.py first."
+            f"Run scripts/02_cesm2le_slowdowns.py (or _relative.py) first."
         )
 
     with xr.open_dataset(fpath) as ds:
@@ -235,9 +251,28 @@ def parse_args() -> argparse.Namespace:
         action='store_true',
         default=False,
         help='Only split and save climate indices (skip SST / slowdown / '
-             'landmask processing).  Requires the existing TVT split files '
-             'to already exist (used only to read the block assignments).',
+             'landmask processing).  Block assignments are deterministic, so '
+             'no existing split files are needed.',
     )
+    parser.add_argument('--labels-file', type=Path, default=None,
+                        help='Slowdown label NetCDF (default: original '
+                             '02_cesm2le_slowdowns output for --variable/--month).')
+    parser.add_argument('--demean', choices=['all', 'group'], default='all',
+                        help="Forced response removed from SST (and from the SIE "
+                             "auxiliary input): 100-member mean (default) or forcing-group mean.")
+    parser.add_argument('--sst-lag', type=int, default=0,
+                        help='Use JJA SST of year t − lag for target year t (default 0).')
+    parser.add_argument('--aux', choices=['none', 'sie_anom'], default='none',
+                        help="Auxiliary scalar input stored alongside the maps "
+                             "(default none; 'sie_anom' = September SIE anomaly at onset).")
+    parser.add_argument('--tag', default=None,
+                        help='Configuration tag → outputs go to tvt_splits/<tag>/ '
+                             '(default: untagged original location).')
+    parser.add_argument('--start-year', type=int, default=START_YEAR)
+    parser.add_argument('--end-year', type=int, default=END_YEAR,
+                        help='Last onset year (default 2040; use 2030 to cap onsets).')
+    parser.add_argument('--variable', default=SLOWDOWN_VAR, choices=['sie', 'sia'])
+    parser.add_argument('--month', default=SLOWDOWN_MONTH)
     return parser.parse_args()
 
 
@@ -245,28 +280,29 @@ def parse_args() -> argparse.Namespace:
 # Main — climate-indices-only (lightweight fast path)
 # =============================================================================
 
-def main_climate_indices_only() -> None:
+def main_climate_indices_only(args: argparse.Namespace) -> None:
     """
     Replay the block assignments from _get_block_indices and split climate
     indices *without* loading SST, slowdown, or the land mask.
     """
     from src.cnn.splits import _get_block_indices
+    start_year, end_year, tag = args.start_year, args.end_year, args.tag
 
     print()
     print('=' * 70)
     print('03  —  CESM2-LE TVT Splits  (climate indices only)')
     print('=' * 70)
     print(f'  Data root    : {paths.DATA_ROOT}')
-    print(f'  Years        : {START_YEAR}–{END_YEAR}')
+    print(f'  Years        : {start_year}–{end_year}')
     print(f'  N splits     : {N_SPLITS}')
-    print(f'  Output dir   : {paths.TVT_SPLITS_DIR}')
+    print(f'  Output dir   : {paths.tvt_splits_dir(tag)}')
     print('=' * 70)
 
     # ------------------------------------------------------------------
     # 1.  Load climate indices
     # ------------------------------------------------------------------
     print('\n[1] Loading CESM2-LE climate indices (JJA mean) ...')
-    climate_indices = load_climate_indices_jja(START_YEAR, END_YEAR)
+    climate_indices = load_climate_indices_jja(start_year, end_year)
     if not climate_indices:
         print('No climate indices found — nothing to do.')
         return
@@ -292,13 +328,13 @@ def main_climate_indices_only() -> None:
             idx_split[f'{idx_name}_te'] = te
 
         save_climate_indices_split(
-            idx_split, k, paths.climate_indices_split_path(k),
+            idx_split, k, paths.climate_indices_split_path(k, tag),
         )
 
     print()
     print('=' * 70)
     print('Done.  Climate index splits saved to:')
-    print(f'  {paths.TVT_SPLITS_DIR}')
+    print(f'  {paths.tvt_splits_dir(tag)}')
     print('=' * 70 + '\n')
 
 
@@ -306,28 +342,38 @@ def main_climate_indices_only() -> None:
 # Main — full pipeline
 # =============================================================================
 
-def main() -> None:
+def main(args: argparse.Namespace) -> None:
+    start_year, end_year, tag = args.start_year, args.end_year, args.tag
+    labels_file = args.labels_file or paths.cesm2le_slowdown_file(args.variable, args.month)
+    out_dir = paths.tvt_splits_dir(tag)
+
     print()
     print('=' * 70)
     print('03  —  CESM2-LE TVT Splits')
     print('=' * 70)
     print(f'  Data root    : {paths.DATA_ROOT}')
-    print(f'  SST years    : {START_YEAR}–{END_YEAR}')
-    print(f'  Slowdown     : {SLOWDOWN_VAR.upper()} / {SLOWDOWN_MONTH}')
+    print(f'  Target years : {start_year}–{end_year}')
+    print(f'  Labels       : {labels_file}')
+    print(f'  Demean       : {args.demean}')
+    print(f'  SST lag      : {args.sst_lag} yr')
+    print(f'  Aux input    : {args.aux}')
+    print(f'  Tag          : {tag or "(none — original configuration)"}')
     print(f'  N splits     : {N_SPLITS}')
-    print(f'  Output dir   : {paths.TVT_SPLITS_DIR}')
+    print(f'  Output dir   : {out_dir}')
     print('=' * 70)
 
     # ------------------------------------------------------------------
-    # 1.  Load JJA SST  (ensemble-demeaned)
+    # 1.  Load JJA SST  (forced response removed, optionally lagged)
     # ------------------------------------------------------------------
     print('\n[1] Loading JJA SST ...')
     sst, sst_years = load_jja_sst_demeaned(
         sst_monthly_template=paths.CESM2LE_SST_MONTHLY,
         member_groups=MEMBER_GROUPS,
-        start_year=START_YEAR,
-        end_year=END_YEAR,
+        start_year=start_year,
+        end_year=end_year,
         sst_varname=SST_VARNAME,
+        demean=args.demean,
+        sst_lag=args.sst_lag,
     )
     print(f'    SST shape : {sst.shape}  '
           f'(nens={sst.shape[0]}, nyear={sst.shape[1]}, '
@@ -336,13 +382,8 @@ def main() -> None:
     # ------------------------------------------------------------------
     # 2.  Load September slowdown labels
     # ------------------------------------------------------------------
-    print(f'\n[2] Loading slowdown labels ({SLOWDOWN_VAR.upper()} / {SLOWDOWN_MONTH}) ...')
-    slowdown = load_slowdown_labels(
-        variable=SLOWDOWN_VAR,
-        month=SLOWDOWN_MONTH,
-        start_year=START_YEAR,
-        end_year=END_YEAR,
-    )
+    print(f'\n[2] Loading slowdown labels ({labels_file.name}) ...')
+    slowdown = load_slowdown_labels(labels_file, start_year, end_year)
 
     # Sanity check — ensemble and year dimensions must match
     if sst.shape[0] != slowdown.shape[0]:
@@ -360,13 +401,25 @@ def main() -> None:
     # 2b.  Load climate indices (JJA mean, optional)
     # ------------------------------------------------------------------
     print(f'\n[2b] Loading CESM2-LE climate indices (JJA mean) ...')
-    climate_indices = load_climate_indices_jja(START_YEAR, END_YEAR)
+    climate_indices = load_climate_indices_jja(start_year, end_year)
     for key, arr in climate_indices.items():
         if arr.shape[0] != sst.shape[0] or arr.shape[1] != sst.shape[1]:
             raise ValueError(
                 f"Climate index '{key}' shape {arr.shape} does not match "
                 f"SST shape ({sst.shape[0]}, {sst.shape[1]})."
             )
+
+    # ------------------------------------------------------------------
+    # 2c.  Auxiliary scalar input (onset-year SIE anomaly), optional
+    # ------------------------------------------------------------------
+    aux_fields, aux_names = None, []
+    if args.aux == 'sie_anom':
+        print(f'\n[2c] Loading auxiliary input: September SIE anomaly (demean={args.demean}) ...')
+        _, sie_anom = load_sie_anomaly(paths.CESM2LE_AICE_DIR / 'metrics', sst_years,
+                                       month=args.month, variable=args.variable,
+                                       demean=args.demean)
+        aux_fields, aux_names = [sie_anom], ['sie_anom']
+        print(f'    sie_anom : {sie_anom.shape}  std {np.nanstd(sie_anom):.3f} M km²')
 
     # ------------------------------------------------------------------
     # 3.  Load land mask
@@ -383,6 +436,7 @@ def main() -> None:
 
     for split in iter_splits(sst, slowdown, N_SPLITS, N_BLOCKS, BLOCK_SIZE):
         k = split['split_idx']
+        blocks = (split['train_blocks'], split['val_block'], split['test_block'])
         print(f'  Split {k}  '
               f'(test block={split["test_block"]}, '
               f'val block={split["val_block"]}, '
@@ -392,12 +446,26 @@ def main() -> None:
         sst_tr_std, sst_va_std, sst_te_std, mu, sigma = standardize(
             split['sst_tr'], split['sst_va'], split['sst_te'], landmask
         )
-        print(f'    μ_train = {mu:.4f},  σ_train = {sigma:.4f}')
+        print(f'    μ_train = {mu:.4f},  σ_train = {sigma:.4f}   '
+              f'prevalence tr/va/te = {split["slow_tr"].mean():.3f}/'
+              f'{split["slow_va"].mean():.3f}/{split["slow_te"].mean():.3f}')
 
         # Apply land mask (land → -10 in standardised space)
         sst_tr_m = apply_landmask(sst_tr_std, landmask)
         sst_va_m = apply_landmask(sst_va_std, landmask)
         sst_te_m = apply_landmask(sst_te_std, landmask)
+
+        # Auxiliary scalars: same block split, standardised with training stats
+        aux, aux_attrs = None, {}
+        if aux_fields:
+            cols = [block_tvt_split(f, *blocks, N_BLOCKS, BLOCK_SIZE) for f in aux_fields]
+            a_tr = np.stack([c[0] for c in cols], axis=1)
+            a_va = np.stack([c[1] for c in cols], axis=1)
+            a_te = np.stack([c[2] for c in cols], axis=1)
+            a_tr, a_va, a_te, a_mu, a_sd = standardize_aux(a_tr, a_va, a_te)
+            aux = {'tr': a_tr, 'va': a_va, 'te': a_te}
+            aux_attrs = {'aux_mu_train': ','.join(f'{v:.6g}' for v in a_mu),
+                         'aux_sigma_train': ','.join(f'{v:.6g}' for v in a_sd)}
 
         # Save
         save_tvt_split(
@@ -410,41 +478,46 @@ def main() -> None:
             mu_train=mu,
             sigma_train=sigma,
             split_idx=k,
-            savepath=paths.tvt_split_path(k),
+            savepath=paths.tvt_split_path(k, tag),
             attrs={
-                'sst_years':       f'{START_YEAR}-{END_YEAR}',
-                'slowdown_var':    SLOWDOWN_VAR,
-                'slowdown_month':  SLOWDOWN_MONTH,
+                'sst_years':       f'{start_year - args.sst_lag}-{end_year - args.sst_lag}',
+                'target_years':    f'{start_year}-{end_year}',
+                'slowdown_var':    args.variable,
+                'slowdown_month':  args.month,
+                'labels_file':     str(labels_file),
+                'demean':          args.demean,
+                'sst_lag':         int(args.sst_lag),
+                'aux':             args.aux,
+                'tag':             tag or '',
                 'member_groups':   str(MEMBER_GROUPS),
+                **aux_attrs,
             },
+            aux=aux,
+            aux_names=aux_names or None,
         )
 
         # Split and save climate indices (same block assignment)
         if climate_indices:
             idx_split = {}
             for idx_name, idx_arr in climate_indices.items():
-                tr, va, te = block_tvt_split(
-                    idx_arr,
-                    split['train_blocks'], split['val_block'],
-                    split['test_block'], N_BLOCKS, BLOCK_SIZE,
-                )
+                tr, va, te = block_tvt_split(idx_arr, *blocks, N_BLOCKS, BLOCK_SIZE)
                 idx_split[f'{idx_name}_tr'] = tr
                 idx_split[f'{idx_name}_va'] = va
                 idx_split[f'{idx_name}_te'] = te
             save_climate_indices_split(
-                idx_split, k, paths.climate_indices_split_path(k),
+                idx_split, k, paths.climate_indices_split_path(k, tag),
             )
 
     print()
     print('=' * 70)
     print('Done.  Splits saved to:')
-    print(f'  {paths.TVT_SPLITS_DIR}')
+    print(f'  {out_dir}')
     print('=' * 70 + '\n')
 
 
 if __name__ == '__main__':
     args = parse_args()
     if args.climate_indices_only:
-        main_climate_indices_only()
+        main_climate_indices_only(args)
     else:
-        main()
+        main(args)

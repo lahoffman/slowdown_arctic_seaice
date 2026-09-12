@@ -16,20 +16,25 @@ For each split × seed combination this script:
 
 Outputs
 -------
-    DATA_ROOT/results/models/cnn_jja_split{k}_run{r}.h5       (one per split×seed)
-    DATA_ROOT/results/metrics/cnn_jja_metrics_split{k}.nc     (one per split)
+    DATA_ROOT/results/models[/<tag>]/cnn_jja_split{k}_run{r}.h5    (one per split×seed)
+    DATA_ROOT/results/metrics[/<tag>]/cnn_jja_metrics_split{k}.nc  (one per split)
 
 Dependencies
 ------------
-Requires outputs of scripts/03_cesm2le_tvt_splits.py.
+Requires outputs of scripts/03_cesm2le_tvt_splits.py (same ``--tag``).
+If the split files carry auxiliary scalars (03 ``--aux sie_anom``) the CNN is
+built with a matching second input automatically (``--no-aux`` to ignore them).
 
 Usage
 -----
-    python scripts/04_cesm2le_cnn_train.py
+    python scripts/04_cesm2le_cnn_train.py                    # original configuration
+    python scripts/04_cesm2le_cnn_train.py --tag rel_base     # revision configurations
+    python scripts/04_cesm2le_cnn_train.py --tag rel_aux --splits 0 1 --n-runs 2   # quick check
 
 Author: Lauren Hoffman  <lhoffma2@ucsc.edu>
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -49,6 +54,8 @@ from src.cnn.train import (
     collect_metrics_dataset,
     save_model,
     save_metrics_dataset,
+    model_inputs,
+    n_aux_inputs,
 )
 
 
@@ -77,7 +84,21 @@ TRAIN_CONFIG = {
     'focal_gamma':   2.0,
 }
 
-METRICS_DIR = paths.RESULTS_DIR / 'metrics'
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--tag', default=None,
+                        help='Configuration tag (splits read from tvt_splits/<tag>/, '
+                             'models/metrics written to models/<tag>/, metrics/<tag>/).')
+    parser.add_argument('--splits', type=int, nargs='+', default=list(range(N_SPLITS)),
+                        help='Subset of split indices to train (default: all 9).')
+    parser.add_argument('--n-runs', type=int, default=N_RUNS,
+                        help=f'Seeds per split (default {N_RUNS}).')
+    parser.add_argument('--no-aux', action='store_true',
+                        help='Ignore auxiliary scalars even if the split files have them.')
+    return parser.parse_args()
 
 
 # =============================================================================
@@ -85,20 +106,26 @@ METRICS_DIR = paths.RESULTS_DIR / 'metrics'
 # =============================================================================
 
 def main() -> None:
+    args = parse_args()
+    tag, n_runs = args.tag, args.n_runs
+    models_dir, metrics_dir = paths.models_dir(tag), paths.metrics_dir(tag)
+    use_aux = False if args.no_aux else None      # None = use if present
+
     print()
     print('=' * 70)
     print('04  —  CESM2-LE CNN Training')
     print('=' * 70)
     print(f'  Data root  : {paths.DATA_ROOT}')
-    print(f'  N splits   : {N_SPLITS}')
-    print(f'  N runs     : {N_RUNS}  (seeds {BASE_SEED}–{BASE_SEED + N_RUNS - 1})')
-    print(f'  Models dir : {paths.MODELS_DIR}')
-    print(f'  Metrics dir: {METRICS_DIR}')
+    print(f'  Tag        : {tag or "(none — original configuration)"}')
+    print(f'  Splits     : {args.splits}')
+    print(f'  N runs     : {n_runs}  (seeds {BASE_SEED}–{BASE_SEED + n_runs - 1})')
+    print(f'  Models dir : {models_dir}')
+    print(f'  Metrics dir: {metrics_dir}')
     print('=' * 70)
 
-    METRICS_DIR.mkdir(parents=True, exist_ok=True)
+    metrics_dir.mkdir(parents=True, exist_ok=True)
 
-    for split_idx in range(N_SPLITS):
+    for split_idx in args.splits:
         print(f'\n{"─" * 70}')
         print(f'Split {split_idx}')
         print(f'{"─" * 70}')
@@ -106,31 +133,39 @@ def main() -> None:
         # ------------------------------------------------------------------
         # Load TVT split
         # ------------------------------------------------------------------
-        split_path = paths.tvt_split_path(split_idx)
+        split_path = paths.tvt_split_path(split_idx, tag)
         if not split_path.exists():
             raise FileNotFoundError(
                 f"TVT split file not found:\n  {split_path}\n"
-                f"Run scripts/03_cesm2le_tvt_splits.py first."
+                f"Run scripts/03_cesm2le_tvt_splits.py"
+                + (f" --tag {tag}" if tag else "") + " first."
             )
         split = load_tvt_split(split_path)
 
         # ------------------------------------------------------------------
-        # Prepare model inputs  →  (n_samples, nx, ny, nch=1)
+        # Prepare model inputs  →  (n_samples, nx, ny, nch=1) [+ aux scalars]
         # ------------------------------------------------------------------
-        x_tr = split['sst_tr'][:, :, :, np.newaxis]   # (ntr, nx, ny, 1)
-        x_va = split['sst_va'][:, :, :, np.newaxis]   # (nva, nx, ny, 1)
-        x_te = split['sst_te'][:, :, :, np.newaxis]   # (nte, nx, ny, 1)
+        x_tr = model_inputs(split, 'tr', use_aux)
+        x_va = model_inputs(split, 'va', use_aux)
+        x_te = model_inputs(split, 'te', use_aux)
+        n_aux = n_aux_inputs(split) if isinstance(x_tr, list) else 0
 
         y_tr = split['slow_tr']                        # (ntr,)
         y_va = split['slow_va']                        # (nva,)
         y_te = split['slow_te']                        # (nte,)
 
-        nx, ny = x_tr.shape[1], x_tr.shape[2]
-        nch    = x_tr.shape[3]
+        maps_tr = x_tr[0] if n_aux else x_tr
+        nx, ny = maps_tr.shape[1], maps_tr.shape[2]
+        nch    = maps_tr.shape[3]
 
-        print(f'  Train : {x_tr.shape}  —  {y_tr.mean():.3f} prevalence')
-        print(f'  Val   : {x_va.shape}  —  {y_va.mean():.3f} prevalence')
-        print(f'  Test  : {x_te.shape}  —  {y_te.mean():.3f} prevalence')
+        print(f'  Train : {maps_tr.shape}  —  {y_tr.mean():.3f} prevalence')
+        print(f'  Val   : {(x_va[0] if n_aux else x_va).shape}  —  {y_va.mean():.3f} prevalence')
+        print(f'  Test  : {(x_te[0] if n_aux else x_te).shape}  —  {y_te.mean():.3f} prevalence')
+        print(f'  Aux   : {n_aux} scalar input(s)'
+              + (f" {split.get('aux_names')}" if n_aux else ''))
+        for key in ('labels_file', 'demean', 'sst_lag'):
+            if key in split['attrs']:
+                print(f'  {key:6s}: {split["attrs"][key]}')
 
         y_true = {'train': y_tr, 'val': y_va, 'test': y_te}
 
@@ -139,7 +174,7 @@ def main() -> None:
         # ------------------------------------------------------------------
         y_scores_runs = []
 
-        for run_idx in range(N_RUNS):
+        for run_idx in range(n_runs):
             seed = BASE_SEED + run_idx
             print(f'\n  Run {run_idx}  (seed={seed})')
 
@@ -151,7 +186,7 @@ def main() -> None:
             print(f'    Class weights: {cw}')
 
             # Build and train model
-            model = build_cnn(nx, ny, nch, rl2=RL2, drop=DROP)
+            model = build_cnn(nx, ny, nch, rl2=RL2, drop=DROP, n_aux=n_aux)
             model, history = train_model(
                 model, x_tr, y_tr, x_va, y_va,
                 config=TRAIN_CONFIG,
@@ -162,7 +197,7 @@ def main() -> None:
             print(f'    Stopped at epoch {n_epochs},  val_loss = {val_loss:.4f}')
 
             # Save model
-            save_model(model, paths.MODELS_DIR, split_idx, run_idx)
+            save_model(model, models_dir, split_idx, run_idx)
 
             # Predict on all splits
             y_scores_runs.append(predict_splits(model, x_tr, x_va, x_te))
@@ -170,7 +205,7 @@ def main() -> None:
         # ------------------------------------------------------------------
         # Evaluate metrics across all runs for this split
         # ------------------------------------------------------------------
-        print(f'\n  Collecting metrics across {N_RUNS} runs ...')
+        print(f'\n  Collecting metrics across {n_runs} runs ...')
         ds_metrics = collect_metrics_dataset(y_true, y_scores_runs)
 
         # Quick summary: mean AUPRC across runs on test split
@@ -181,13 +216,15 @@ def main() -> None:
               f'min={auprc_test.min():.3f},  '
               f'max={auprc_test.max():.3f}')
 
-        save_metrics_dataset(ds_metrics, METRICS_DIR, split_idx)
+        ds_metrics.attrs.update({k: str(v) for k, v in split['attrs'].items()
+                                 if k in ('labels_file', 'demean', 'sst_lag', 'aux', 'tag')})
+        save_metrics_dataset(ds_metrics, metrics_dir, split_idx)
 
     print()
     print('=' * 70)
     print('Done.')
-    print(f'  Models   → {paths.MODELS_DIR}')
-    print(f'  Metrics  → {METRICS_DIR}')
+    print(f'  Models   → {models_dir}')
+    print(f'  Metrics  → {metrics_dir}')
     print('=' * 70 + '\n')
 
 

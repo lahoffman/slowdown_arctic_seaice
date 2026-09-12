@@ -55,7 +55,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from configs import paths
 from src.cnn.splits import load_tvt_split
-from src.cnn.train import load_model
+from src.cnn.train import load_model, model_inputs
 from src.xai.lrp import strip_sigmoid, compute_lrp_z, save_lrp
 
 
@@ -102,16 +102,32 @@ def load_lat_lon() -> tuple:
 # Main
 # =============================================================================
 
+def parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--tag', default=None,
+                        help='Configuration tag (splits/models read from <dir>/<tag>/, '
+                             'attributions written to attributions/<tag>/).')
+    parser.add_argument('--splits', type=int, nargs='+', default=list(range(N_SPLITS)))
+    parser.add_argument('--n-runs', type=int, default=N_RUNS)
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
+    tag = args.tag
+    models_dir, attr_dir = paths.models_dir(tag), paths.attributions_dir(tag)
     print()
     print('=' * 70)
     print('05  —  CESM2-LE LRP-z Attributions')
     print('=' * 70)
     print(f'  Data root       : {paths.DATA_ROOT}')
-    print(f'  N splits        : {N_SPLITS}')
-    print(f'  N runs          : {N_RUNS}')
+    print(f'  Tag             : {tag or "(none — original configuration)"}')
+    print(f'  Splits          : {args.splits}')
+    print(f'  N runs          : {args.n_runs}')
     print(f'  Chunk size      : {CHUNK_SIZE}')
-    print(f'  Attributions dir: {paths.ATTRIBUTIONS_DIR}')
+    print(f'  Attributions dir: {attr_dir}')
     print('=' * 70)
 
     # ------------------------------------------------------------------
@@ -124,13 +140,13 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Outer loop: splits
     # ------------------------------------------------------------------
-    for split_idx in range(N_SPLITS):
+    for split_idx in args.splits:
         print(f'\n{"─" * 70}')
         print(f'Split {split_idx}')
         print(f'{"─" * 70}')
 
         # Load the training SST from the saved TVT split
-        split_path = paths.tvt_split_path(split_idx)
+        split_path = paths.tvt_split_path(split_idx, tag)
         if not split_path.exists():
             raise FileNotFoundError(
                 f"TVT split file not found:\n  {split_path}\n"
@@ -139,10 +155,13 @@ def main() -> None:
         split = load_tvt_split(split_path)
 
         # Training inputs only — LRP is computed on training data
-        x_tr = split['sst_tr'][:, :, :, np.newaxis]   # (ntr, nx, ny, 1)
-        print(f'  Training input shape: {x_tr.shape}')
+        # (maps, or [maps, aux] for two-input models; relevance is on the maps)
+        x_tr = model_inputs(split, 'tr')
+        maps_tr = x_tr[0] if isinstance(x_tr, list) else x_tr
+        print(f'  Training input shape: {maps_tr.shape}'
+              + (f'  + aux {x_tr[1].shape}' if isinstance(x_tr, list) else ''))
 
-        n_samples = x_tr.shape[0]
+        n_samples = maps_tr.shape[0]
         n_chunks  = n_samples // CHUNK_SIZE
         if n_samples % CHUNK_SIZE != 0:
             print(f'  Warning: {n_samples} samples not evenly divisible by '
@@ -150,11 +169,11 @@ def main() -> None:
                   f'Last {n_samples % CHUNK_SIZE} sample(s) will be dropped.')
 
         # Inner loop: seeds / runs
-        for run_idx in range(N_RUNS):
+        for run_idx in range(args.n_runs):
             print(f'\n  Run {run_idx}')
 
             # Check model exists
-            model_path = paths.model_path(split_idx, run_idx)
+            model_path = paths.model_path(split_idx, run_idx, tag)
             if not model_path.exists():
                 raise FileNotFoundError(
                     f"Model file not found:\n  {model_path}\n"
@@ -162,7 +181,7 @@ def main() -> None:
                 )
 
             # Load trained model
-            model = load_model(paths.MODELS_DIR, split_idx, run_idx)
+            model = load_model(models_dir, split_idx, run_idx)
             print(f'    Loaded model: {model_path.name}')
 
             # Strip sigmoid for LRP
@@ -180,7 +199,7 @@ def main() -> None:
             print(f'    Attribution shape: {attributions.shape}')
 
             # Save
-            out_path = paths.attribution_path(split_idx, run_idx)
+            out_path = paths.attribution_path(split_idx, run_idx, tag)
             save_lrp(
                 attributions=attributions,
                 lat=lat,
@@ -193,7 +212,7 @@ def main() -> None:
     print()
     print('=' * 70)
     print('Done.')
-    print(f'  Attributions → {paths.ATTRIBUTIONS_DIR}')
+    print(f'  Attributions → {attr_dir}')
     print('=' * 70 + '\n')
 
 

@@ -30,6 +30,8 @@ Usage:
   python scripts/07_baselines.py                                   # original labels
   python scripts/07_baselines.py --labels-file <relative-label .nc> --tag rel_w10_s1
   python scripts/07_baselines.py --n-boot 200 --no-cnn --no-fig
+  # retrained configuration (step 1.5): score its cached predictions on the same axes
+  python scripts/07_baselines.py --labels-file <relative .nc> --demean group --cnn-tag rel_aux --tag rel_aux
 """
 
 import argparse
@@ -50,7 +52,6 @@ from src.data.cesm2le.slowdowns_relative import frequency_table
 
 START_YEAR, END_YEAR = 1990, 2040
 N_SPLITS, N_BLOCKS = 9, 10
-CNN_PRED_DIR = paths.RESULTS_DIR / "predictions" / "cesm2le"
 OUT_DIR = paths.RESULTS_DIR / "baselines"
 
 
@@ -70,6 +71,11 @@ def parse_args():
                    help="slowdown label NetCDF (default: original 02_cesm2le_slowdowns output)")
     p.add_argument("--tag", default=None,
                    help="output subdirectory / figure suffix (default: none)")
+    p.add_argument("--cnn-tag", default=None,
+                   help="tag of the CNN configuration whose cached predictions "
+                        "(06_cnn_predict_cesm2le.py --tag) are scored (default: original)")
+    p.add_argument("--demean", default="all", choices=["all", "group"],
+                   help="forced response removed from the SIE anomaly predictor (default all)")
     return p.parse_args()
 
 
@@ -77,16 +83,19 @@ def main():
     st.paper_rc()
     args = parse_args()
     out_dir = OUT_DIR / args.tag if args.tag else OUT_DIR
+    CNN_PRED_DIR = paths.cesm2le_predictions_dir(args.cnn_tag)
     out_dir.mkdir(parents=True, exist_ok=True)
     label_file = args.labels_file or paths.cesm2le_slowdown_file(args.variable, args.month)
     print("07  —  Scalar baselines for slowdown classification")
     print(f"  years {args.start_year}–{args.end_year}   splits {N_SPLITS}   n_boot {args.n_boot}")
-    print(f"  labels: {label_file}\n")
+    print(f"  labels: {label_file}")
+    print(f"  CNN predictions: {CNN_PRED_DIR}  (sie_anom demean={args.demean})\n")
 
     # 1. labels + scalar fields on the (nens, nyear) grid -----------------------
     labels, years = bl.load_labels(label_file, args.start_year, args.end_year)
     sie, sie_anom = bl.load_sie_anomaly(paths.CESM2LE_AICE_DIR / "metrics", years,
-                                        month=args.month, variable=args.variable)
+                                        month=args.month, variable=args.variable,
+                                        demean=args.demean)
     fields = {"sie": sie, "sie_anom": sie_anom}
     fields.update(bl.load_climate_indices_jja(paths.CESM2LE_CLIMATE_INDICES_DIR,
                                               args.start_year, args.end_year))

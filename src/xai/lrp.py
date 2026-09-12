@@ -130,9 +130,10 @@ def compute_lrp_z(
     ----------
     model_logits : tf.keras.Model
         Model with sigmoid stripped (output of ``strip_sigmoid``).
-    x_data : np.ndarray
-        Input data, shape ``(n_samples, nx, ny, nch)``.  Land pixels should
-        still be at ``land_fill_value`` (they will be zeroed internally).
+    x_data : np.ndarray or list
+        Input data, shape ``(n_samples, nx, ny, nch)``, or ``[maps, aux]`` for
+        a two-input model (only the map relevance is returned).  Land pixels
+        should still be at ``land_fill_value`` (they will be zeroed internally).
     chunk_size : int
         Number of samples to analyse per batch (default: 100).
         Reduce this if you run into memory errors.
@@ -176,13 +177,17 @@ def compute_lrp_z(
         )
 
     # Replace land fill with zero before analysis
-    x_lrp = x_data.copy()
-    x_lrp[np.isclose(x_lrp, land_fill_value)] = replace_fill_with
+    # Two-input models (maps + auxiliary scalars, revision step 1.3): the land
+    # fill is only replaced in the maps; relevance is returned for the maps.
+    multi_input = isinstance(x_data, (list, tuple))
+    maps = (x_data[0] if multi_input else x_data).copy()
+    maps[np.isclose(maps, land_fill_value)] = replace_fill_with
+    x_lrp = [maps, *x_data[1:]] if multi_input else maps
 
     # Create analyser once
     analyzer = innvestigate.create_analyzer(lrp_method, model_logits)
 
-    n_samples  = x_lrp.shape[0]
+    n_samples  = maps.shape[0]
     n_chunks   = n_samples // chunk_size
     remainder  = n_samples % chunk_size
 
@@ -197,7 +202,11 @@ def compute_lrp_z(
     for i in range(n_chunks):
         start = i * chunk_size
         end   = start + chunk_size
-        chunk = analyzer.analyze(x_lrp[start:end])
+        if multi_input:
+            chunk = analyzer.analyze([a[start:end] for a in x_lrp])
+            chunk = chunk[0] if isinstance(chunk, (list, tuple)) else chunk
+        else:
+            chunk = analyzer.analyze(x_lrp[start:end])
         chunks.append(chunk)
         if (i + 1) % 10 == 0 or i == n_chunks - 1:
             print(f"  LRP chunk {i + 1}/{n_chunks} done")

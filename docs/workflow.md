@@ -1,5 +1,7 @@
 # Workflow Guide
 
+> Revision work: `docs/PLAN.md` is the step checklist; `docs/REVISION_PLAN.md` holds the reasoning and results behind each step; `docs/ZL_RESPONSE.md` tracks the coauthor comments.
+
 The full analysis pipeline, step by step. Every step assumes the environment is
 installed and `SLOWDOWN_DATA_ROOT` is set (see [`setup.md`](setup.md)). Run
 scripts from the repo root.
@@ -76,11 +78,18 @@ Computes Niño3.4, ENSO CP/TP, and IPO indices from CESM2-LE and ERSSTv5 SST.
 ### Forced response
 
 ```bash
-python scripts/02_cesm2le_forced.py
+python scripts/02_cesm2le_forced.py                 # ensmean + group means + diagnostics
+python scripts/02_cesm2le_forced.py --demean all    # original ensmean only
 ```
 
 Saves the ensemble-mean JJA SST — the forced component that is subtracted from
-each member during training, and reused by the observation pipeline.
+each member during training, and reused by the observation pipeline — and, since
+revision step 1.3, the forcing-group means (`cesm2le_groupmean_jja_sst.nc`, groups
+cmip6 = members 0–49, smbb = 50–99). Two diagnostics go to
+`results/figures/diagnostics/`: `forced_group_difference.png` (SMBB − CMIP6 forced
+SST map and Arctic-mean series) and `forced_demeaned_arctic.png` (member Arctic SST
+anomalies under 100-member vs group demeaning). `forced_response()` in
+`src/data/cesm2le/forced.py` is the one definition used here and in stage 03.
 
 ### Slowdown classification
 
@@ -104,6 +113,7 @@ SIE-vs-GMT comparison figure.
 python scripts/02_cesm2le_slowdowns_relative.py                     # 10-yr, 1σ, per-group demean
 python scripts/02_cesm2le_slowdowns_relative.py --window 3 5 7 10 15  # window sweep
 python scripts/02_cesm2le_slowdowns_relative.py --demean all        # full-ensemble reference
+python scripts/02_cesm2le_slowdowns_relative.py --sigma-mode both   # pooled vs yearly σ + decision figure (step 1.2)
 ```
 
 Alternative label definition (revision plan §4.5): a slowdown is a member's
@@ -123,9 +133,21 @@ diagnostic per label file and a window-sweep overlay to `results/figures/`. The 
 ### Training splits
 
 ```bash
-python scripts/03_cesm2le_tvt_splits.py                    # full pipeline
+python scripts/03_cesm2le_tvt_splits.py                    # original configuration (untagged)
 python scripts/03_cesm2le_tvt_splits.py --climate-indices-only
+
+# revision configurations (relative labels, group demeaning, aux input, lag) → tvt_splits/<tag>/
+LBL=$SLOWDOWN_DATA_ROOT/cesm2le/slowdowns/cesm2le_sie_slowdown_relative_SEP_w10_s1_group_1990-2100.nc
+python scripts/03_cesm2le_tvt_splits.py --labels-file $LBL --demean group --tag rel_base
+python scripts/03_cesm2le_tvt_splits.py --labels-file $LBL --demean group --aux sie_anom --tag rel_aux
+python scripts/03_cesm2le_tvt_splits.py --labels-file $LBL --demean group --aux sie_anom --sst-lag 1 --start-year 1991 --tag rel_lag1
 ```
+
+Every configuration has a `--tag`; stages 04–06 take the same `--tag` and read /
+write `models/<tag>`, `metrics/<tag>`, `attributions/<tag>`,
+`predictions/cesm2le/<tag>`, so the original (untagged) outputs are never
+overwritten. `07_baselines.py --cnn-tag <tag>` and `make_figure.py --tag <tag>`
+score and draw a tagged configuration.
 
 Builds the 9 train / validate / test splits. For each split it loads JJA SST and
 September slowdown labels, aligns years, splits the 100 members into
@@ -152,7 +174,8 @@ the forced response by ensemble mean or linear method.
 ## Stage 04 — Train the CNN
 
 ```bash
-python scripts/04_cesm2le_cnn_train.py
+python scripts/04_cesm2le_cnn_train.py                    # original
+python scripts/04_cesm2le_cnn_train.py --tag rel_aux      # a tagged configuration (aux input auto-detected)
 ```
 
 Trains the JJA SST CNN for each of the 9 splits and every random seed. Per split
@@ -167,7 +190,7 @@ confidence intervals (`results/metrics/cnn_jja_metrics_split{k}.nc`).
 ## Stage 05 — Explainability (LRP)
 
 ```bash
-python scripts/05_cesm2le_lrp.py
+python scripts/05_cesm2le_lrp.py [--tag rel_aux]
 ```
 
 Computes LRP-z attribution maps for each trained model over its training-set
@@ -183,7 +206,7 @@ SST, after stripping the output activation. Saves one NetCDF per split × seed
 ## Stage 06 — Precompute predictions
 
 ```bash
-python scripts/06_cnn_predict_cesm2le.py
+python scripts/06_cnn_predict_cesm2le.py [--tag rel_aux]
 python scripts/06_cnn_predict_ersst.py
 python scripts/06_cnn_predict_ersst.py --forced-method ensmean linear
 ```

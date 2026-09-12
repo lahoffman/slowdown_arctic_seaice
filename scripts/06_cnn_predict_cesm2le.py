@@ -60,7 +60,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from configs import paths
 from src.cnn.splits import load_tvt_split
-from src.cnn.train import load_model, predict_splits
+from src.cnn.train import load_model, predict_splits, model_inputs
 
 
 # =============================================================================
@@ -71,7 +71,16 @@ N_SPLITS  = 9
 N_SEEDS   = 5
 BASE_SEED = 42
 
-PREDICTIONS_DIR = paths.RESULTS_DIR / 'predictions' / 'cesm2le'
+
+
+def parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--tag', default=None,
+                        help='Configuration tag (splits/models read from <dir>/<tag>/, '
+                             'predictions written to predictions/cesm2le/<tag>/).')
+    return parser.parse_args()
 
 
 # =============================================================================
@@ -161,14 +170,19 @@ def save_prediction(
 # =============================================================================
 
 def main():
+    args = parse_args()
+    tag = args.tag
+    PREDICTIONS_DIR = paths.cesm2le_predictions_dir(tag)
+    models_dir = paths.models_dir(tag)
     print()
     print('=' * 70)
     print('06  —  Precompute CNN predictions on CESM2-LE')
     print('=' * 70)
     print(f'  Data root      : {paths.DATA_ROOT}')
+    print(f'  Tag            : {tag or "(none — original configuration)"}')
     print(f'  N splits       : {N_SPLITS}')
     print(f'  N seeds        : {N_SEEDS}  (seeds {BASE_SEED}–{BASE_SEED + N_SEEDS - 1})')
-    print(f'  Models dir     : {paths.MODELS_DIR}')
+    print(f'  Models dir     : {models_dir}')
     print(f'  Output dir     : {PREDICTIONS_DIR}')
     print('=' * 70)
 
@@ -182,7 +196,7 @@ def main():
         print(f'{"─" * 60}')
 
         # ── Load TVT split ────────────────────────────────────────────────
-        split_path = paths.tvt_split_path(split_idx)
+        split_path = paths.tvt_split_path(split_idx, tag)
         if not split_path.exists():
             raise FileNotFoundError(
                 f'TVT split not found: {split_path}\n'
@@ -190,9 +204,10 @@ def main():
             )
         split = load_tvt_split(split_path)
 
-        x_tr = split['sst_tr'][:, :, :, np.newaxis]   # (n_tr, nx, ny, 1)
-        x_va = split['sst_va'][:, :, :, np.newaxis]
-        x_te = split['sst_te'][:, :, :, np.newaxis]
+        # maps (n, nx, ny, 1), or [maps, aux] when the split carries aux scalars
+        x_tr = model_inputs(split, 'tr')
+        x_va = model_inputs(split, 'va')
+        x_te = model_inputs(split, 'te')
 
         y_true = {
             'train': split['slow_tr'],
@@ -200,13 +215,14 @@ def main():
             'test':  split['slow_te'],
         }
 
-        print(f'  Train: {x_tr.shape}  prevalence={y_true["train"].mean():.3f}')
-        print(f'  Val  : {x_va.shape}  prevalence={y_true["val"].mean():.3f}')
-        print(f'  Test : {x_te.shape}  prevalence={y_true["test"].mean():.3f}')
+        for name, x, y in (('Train', x_tr, 'train'), ('Val  ', x_va, 'val'), ('Test ', x_te, 'test')):
+            shp = x[0].shape if isinstance(x, list) else x.shape
+            print(f'  {name}: {shp}  prevalence={y_true[y].mean():.3f}'
+                  + (f'  + {x[1].shape[1]} aux' if isinstance(x, list) else ''))
 
         # ── Loop over seeds ───────────────────────────────────────────────
         for run_idx in range(N_SEEDS):
-            model_p = paths.model_path(split_idx, run_idx)
+            model_p = paths.model_path(split_idx, run_idx, tag)
             if not model_p.exists():
                 print(f'  [skip] {model_p.name} not found')
                 continue
@@ -214,7 +230,7 @@ def main():
             print(f'  seed {BASE_SEED + run_idx}: ', end='', flush=True)
 
             # Load model and predict
-            model = load_model(paths.MODELS_DIR, split_idx, run_idx)
+            model = load_model(models_dir, split_idx, run_idx)
             y_scores = predict_splits(model, x_tr, x_va, x_te)
             print('predicted', end=' → ', flush=True)
 
