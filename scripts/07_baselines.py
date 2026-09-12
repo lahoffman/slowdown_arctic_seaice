@@ -8,10 +8,10 @@ members:
   random_prevalence   guess positives at the training prevalence
   year_climatology    P(slowdown | onset year) from training members
   logit_sie_anom      logistic regression on Sept SIE anomaly at onset
-  logit_arctic_sst    logistic regression on the Arctic JJA SST index
-  logit_indices       Arctic SST + Niño3.4 + IPO
-  logit_sie_arctic    SIE anomaly + Arctic SST
-  logit_sie_year      SIE anomaly + year climatology (no ocean variability)
+  logit_arctic_sst    Arctic JJA SST index alone;  logit_nino34, logit_ipo likewise
+  logit_pacific       Niño3.4 + IPO;  logit_indices = Arctic SST + Niño3.4 + IPO
+  logit_sie_*         SIE anomaly + one index (arctic / nino34 / ipo / pacific / year):
+                      what each adds on top of the ice state
   logit_all_scalars   everything above
   cnn_run{r}          cached CNN predictions (06_cnn_predict_cesm2le.py), if present
 

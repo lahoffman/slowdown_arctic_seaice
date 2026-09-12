@@ -36,10 +36,19 @@ BASELINE_FEATURES: Dict[str, List[str]] = {
     "always_positive":      [],
     "random_prevalence":    [],
     "year_climatology":     ["yearclim"],
+    # single predictors
     "logit_sie_anom":       ["sie_anom"],
     "logit_arctic_sst":     ["arctic"],
+    "logit_nino34":         ["nino34"],
+    "logit_ipo":            ["ipo"],
+    # index combinations (no ice state)
+    "logit_pacific":        ["nino34", "ipo"],
     "logit_indices":        ["arctic", "nino34", "ipo"],
+    # what each adds on top of the ice state
     "logit_sie_arctic":     ["sie_anom", "arctic"],
+    "logit_sie_nino34":     ["sie_anom", "nino34"],
+    "logit_sie_ipo":        ["sie_anom", "ipo"],
+    "logit_sie_pacific":    ["sie_anom", "nino34", "ipo"],
     "logit_sie_year":       ["sie_anom", "yearclim"],
     "logit_all_scalars":    ["sie_anom", "arctic", "nino34", "ipo", "yearclim"],
 }
