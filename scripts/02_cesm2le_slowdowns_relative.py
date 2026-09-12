@@ -9,6 +9,8 @@ observed threshold by a near-zero ensemble-mean trend. Original labels from
 
 Outputs (one per window × sigma):
   CESM2LE_SLOWDOWNS_DIR/cesm2le_{var}_slowdown_relative_{MON}_w{window}_s{sigma}_{demean}_1990-2100.nc
+  FIGURES_DIR/<same stem>.png          3-panel diagnostic per label file
+  FIGURES_DIR/..._window_sweep.png     frequency by onset year across windows
 
 Usage:
   python scripts/02_cesm2le_slowdowns_relative.py                  # 10-yr, 1σ, group demean
@@ -22,6 +24,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+import xarray as xr
 
 from configs import paths
 from src.data.cesm2le.slowdowns import load_sie_monthly_files
@@ -50,6 +54,8 @@ def parse_args():
     p.add_argument("--pool-years", type=int, nargs=2, default=[1990, 2040])
     p.add_argument("--start-year", type=int, default=1990)
     p.add_argument("--end-year", type=int, default=2100)
+    p.add_argument("--no-fig", action="store_true", help="skip diagnostic figures")
+    p.add_argument("--member", type=int, default=7, help="member highlighted in the figure")
     return p.parse_args()
 
 
@@ -61,6 +67,11 @@ def main():
                                         end_year=a.end_year)
     print(f"  {a.variable.upper()} {a.month}: {sie.shape[0]} members, {years[0]}–{years[-1]}\n")
     paths.CESM2LE_SLOWDOWNS_DIR.mkdir(parents=True, exist_ok=True)
+    orig_file = paths.cesm2le_slowdown_file(a.variable, a.month)
+    original = xr.open_dataset(orig_file) if orig_file.exists() else None
+    if original is None:
+        print(f"  [note] original labels not found ({orig_file.name}); panel (c) shows relative only")
+    sweep = {}
 
     for w in a.window:
         for s in a.n_sigma:
@@ -78,7 +89,18 @@ def main():
             print("  slowdown frequency by decade (onset years "
                   f"{a.pool_years[0]}–{a.pool_years[1]}):")
             print(rel.frequency_table(lab[:, sel], yrs[sel]))
+            if not a.no_fig:
+                rel.plot_relative_labels(ds, sie, years, paths.FIGURES_DIR / f"{out.stem}.png",
+                                         original=original, member=a.member,
+                                         pool_years=tuple(a.pool_years))
+            if s == a.n_sigma[0]:
+                sweep[w] = ds
             print()
+
+    if not a.no_fig and len(sweep) > 1:
+        rel.plot_window_sweep(sweep, paths.FIGURES_DIR /
+                              f"cesm2le_{a.variable}_slowdown_relative_{a.month}_window_sweep.png",
+                              pool_years=tuple(a.pool_years))
 
 
 if __name__ == "__main__":
