@@ -48,7 +48,7 @@ Status: `[x]` done · `[~]` in progress / partly done · `[ ]` to do · `[-]` dr
 ## Phase 6 — Observations
 
 - [ ] 6.1 Forced-signal removal comparison (linear vs ensmean vs quadratic) and choice of forced reference for ERSST now that the CNN is trained on group-demeaned SST (either group or 100-member mean; ≤0.1 °C in the Arctic); Arctic SST index 2010–2025 under each. *Branch-independent.*
-- [ ] 6.2 OISST v2.1 as second SST product (download, regrid, rerun obs pipeline). *Branch-independent; can run in parallel.*
+- [~] 6.2 OISST v2.1 as second SST product: download + monthly means + block-average regrid (`01_oisst_preprocessing.py`) and ERSST-vs-OISST comparison (`02_obs_compare_products.py` → `diagnostics/obs_products_compare.png`) coded; *to do:* run on profx, then Arctic SST index + `03_ersst_test.py`/`06_cnn_predict_ersst.py` generalised to `--product oisst` once the retrained CNN exists.
 - [ ] 6.3 Recount vote fractions 2016–2025 and fix the text ("fewer than 20% … 2017–2025" ≠ Fig. 4b); extend observed labels to onset 2016.
 - [~] 6.4 Fig. 4: single-CNN panel removed by default (`--single-model` to add back); add bootstrap uncertainty and event-level hits.
 - [ ] 6.5 Model–observation sign discrepancy (IPO/ENSO phase) as an explicit caveat paragraph.

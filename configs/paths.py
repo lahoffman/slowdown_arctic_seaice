@@ -108,6 +108,22 @@ def ersst_testing_file(forced_method: str = 'ensmean') -> Path:
 
 
 # =============================================================================
+# OISST v2.1 (AVHRR-only)  —  second observational SST product (revision step 6.2)
+# =============================================================================
+
+OISST_DIR = DATA_ROOT / 'oisst'
+OISST_RAW_DIR = OISST_DIR / 'raw'            # daily files, deleted after the monthly mean is built
+OISST_MONTHLY_DIR = OISST_DIR / 'monthly'    # oisst_v2.1_mon_YYYYMM.nc on the 0.25 deg grid
+OISST_REGRIDDED = OISST_DIR / 'sst_regrid_cesm2le.nc'
+OISST_ARCTIC_SST = OISST_DIR / 'oisst_arctic_sst_index.nc'
+
+
+def oisst_testing_file(forced_method: str = 'ensmean') -> Path:
+    """Path to the OISST testing NetCDF for a given forced-removal method."""
+    return OISST_DIR / f'oisst_testing_forced_{forced_method}.nc'
+
+
+# =============================================================================
 # CESM2-LE  —  model ensemble
 # =============================================================================
 

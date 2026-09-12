@@ -63,6 +63,18 @@ Computes 10-year sliding decadal trends in observed SIE/SIA, defines the
 slowdown threshold (mean + 1σ), and writes per-month threshold and event files.
 These thresholds define what counts as a "slowdown" for the model data.
 
+### OISST v2.1 (second observational product, step 6.2)
+
+```bash
+nohup python -u scripts/01_oisst_preprocessing.py > $SLOWDOWN_DATA_ROOT/results/logs/oisst_download.out 2>&1 &
+python scripts/02_obs_compare_products.py          # ERSST vs OISST on the CESM2 grid → diagnostics/obs_products_compare.png
+```
+
+Downloads NCEI's daily AVHRR-only files a month at a time (~1.6 MB each, ~20 GB
+for 1990–2025), saves a monthly mean of `sst` and `ice` per month under
+`oisst/monthly/` and deletes the dailies, then block-averages to the CESM2 grid
+(`oisst/sst_regrid_cesm2le.nc`). Resumable: months already present are skipped.
+
 ## Stage 02 — Indices, forced response, slowdown labels
 
 ### Climate indices

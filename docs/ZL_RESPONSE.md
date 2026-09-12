@@ -16,7 +16,7 @@ Plain-language summary of each comment, what we'll do about it, and where it sit
 Very likely part of it. In CESM2, SST under ice is pinned near freezing, so the Arctic anomaly map is partly an ice-concentration map. We'll retrain with ice-covered cells masked (aice > 15% in JJA of the onset year) and rerun the Arctic occlusion test. We'll also document what ERSSTv5 and OISST assign under ice. *Plan §1.6, §5.3.*
 
 **4. Is ERSSTv5 good enough in the Arctic? Consider OISSTv2.1 (used for the Arctic Report Card); ERSSTv6 also exists.**
-Yes — we'll add OISSTv2.1 as a second observational input, regrid it to the CESM2 grid, rerun the observational predictions and the Arctic SST index, and show both products side by side. We'll justify the primary product in §2.2 and mention v6. This is independent of the model work and can run in parallel. *Plan §6.2.*
+Yes — *in progress.* The OISST v2.1 download/monthly-mean/regridding pipeline and an ERSST-vs-OISST comparison on the CESM2 grid (Arctic JJA SST, climatology and trend differences, coverage and treatment under ice) are built; the observational predictions and the Arctic SST index will be rerun with both products once the CNN is retrained, and shown side by side. We'll justify the primary product in §2.2 and mention v6. This is independent of the model work and can run in parallel. *Plan §6.2.*
 
 **5. Sensitivity to the 10-yr window (England et al. use 20 yr)?**
 Not tested yet. We'll run the cheap version (logistic baselines) over windows of 8/10/12/15 yr, thresholds of 0.5/1/1.5σ, and SST seasons, and retrain the CNN for one alternative. Reported as an SI heat-map. *Plan §4.2.*
