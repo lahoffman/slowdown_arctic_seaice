@@ -34,7 +34,7 @@ def plot_summary(stacked, out_png=None):
             [m for m in models if m not in BASELINE_FEATURES]
     ink, muted, accent = st.INK, st.MUTED, st.BLUE
 
-    fig, axes = plt.subplots(1, len(metrics), figsize=(4.2 * len(metrics), 4.6), sharey=True)
+    fig, axes = plt.subplots(1, len(metrics), figsize=(4.2 * len(metrics), 7.5), sharey=True)
     for ax, met, lab in zip(axes, metrics, "abc"):
         ax.set_title(f"({lab}) {met}", loc="left", weight="bold")
         for i, m in enumerate(order):

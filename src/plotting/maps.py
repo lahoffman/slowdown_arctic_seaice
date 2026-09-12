@@ -35,12 +35,14 @@ def global_map(ax, lon, lat, data, cmap, vmin, vmax, cbar_label: Optional[str] =
                cbar: bool = True, coast_lw: float = 0.6):
     """Draw one global field; returns the mappable."""
     lon2d, lat2d = np.meshgrid(lon, lat)
-    kw = dict(cmap=cmap, vmin=vmin, vmax=vmax, shading="auto", zorder=0)
+    # rasterized + edgecolors="face" removes the white seams between cells that
+    # PDF viewers draw for anti-aliased vector pcolormesh (the "checkered" look)
+    kw = dict(cmap=cmap, vmin=vmin, vmax=vmax, shading="auto", zorder=0,
+              rasterized=True, edgecolors="face", linewidth=0, antialiased=False)
     if HAS_CARTOPY:
         ax.set_global()
         ax.add_feature(cfeature.LAND, facecolor="lightgray", zorder=1)
         ax.add_feature(cfeature.COASTLINE, linewidth=coast_lw, zorder=2)
-        ax.gridlines(draw_labels=False, linewidth=0.3, color="gray", alpha=0.5)
         im = ax.pcolormesh(lon2d, lat2d, data, transform=ccrs.PlateCarree(), **kw)
     else:
         im = ax.pcolormesh(lon2d, lat2d, data, **kw)

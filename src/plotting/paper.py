@@ -41,6 +41,18 @@ from .style import plt, panel_label
 # Figure 1 — schematic + observed record + one member
 # =============================================================================
 
+def _trim_white(img: np.ndarray, thresh: int = 250) -> np.ndarray:
+    """Crop the white margins of a schematic image so it fills its axes."""
+    rgb = img[..., :3] if img.ndim == 3 else img[..., None]
+    ink = (rgb < thresh).any(axis=-1) if img.ndim == 3 else (rgb[..., 0] < thresh)
+    if img.ndim == 3 and img.shape[2] == 4:                     # transparent pixels count as white
+        ink &= img[..., 3] > 0
+    rows, cols = np.where(ink.any(1))[0], np.where(ink.any(0))[0]
+    if rows.size == 0 or cols.size == 0:
+        return img
+    pad = 4
+    return img[max(rows[0] - pad, 0):rows[-1] + pad, max(cols[0] - pad, 0):cols[-1] + pad]
+
 def fig_1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
           member: int = 6, schematic: Optional[np.ndarray] = None, window: int = 10,
           varname="SIE", month="SEP", xmax=2100) -> plt.Figure:
@@ -48,8 +60,12 @@ def fig_1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
     tyrs = labels["nyr"].values.astype(int)
     trends, slow = labels["linear_trends_ens"].values, labels["slowdown"].values.astype(int)
     if schematic is not None:
-        fig = plt.figure(figsize=(20, 6.5))
-        gs = fig.add_gridspec(2, 2, width_ratios=[1.4, 1.0], wspace=0.12, hspace=0.35)
+        schematic = _trim_white(schematic)
+        asp = schematic.shape[1] / schematic.shape[0]           # width / height
+        h = 8.0                                                  # inches; panels (b,c) stack in this height
+        w_left, w_right = h * asp, 7.5
+        fig = plt.figure(figsize=(w_left + w_right + 0.8, h))
+        gs = fig.add_gridspec(2, 2, width_ratios=[w_left, w_right], wspace=0.12, hspace=0.3)
         ax_a = fig.add_subplot(gs[:, 0]); ax_a.imshow(schematic); ax_a.axis("off")
         panel_label(ax_a, "(a)", y=0.98)
         ax_b, ax_c = fig.add_subplot(gs[0, 1]), fig.add_subplot(gs[1, 1])
@@ -59,8 +75,8 @@ def fig_1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
         lb, lc = "(a)", "(b)"
     ax_b.plot(nsidc["ice_years"], nsidc["ice"], lw=2.2, color=st.INK, label=f"NSIDC {varname}")
     sd.trend_segments(ax_b, nsidc["ice_years"], nsidc["ice"], nsidc["trends"], nsidc["slowdown"], window)
-    ax_b.set_ylabel(f"{month} {varname} [M km²]"); ax_b.legend(frameon=False, loc="upper right", ncol=3)
-    ax_b.set_ylim(top=ax_b.get_ylim()[1] + 0.25 * np.ptp(ax_b.get_ylim()))   # headroom for the legend
+    ax_b.set_ylabel(f"{month} {varname} [M km²]")
+    ax_b.legend(frameon=False, loc="lower left")                    # the record starts high, so lower left is empty
     panel_label(ax_b, lb)
     h = sd.members_bg(ax_c, years, sie)
     ax_c.plot(years, sie.mean(0), lw=1.6, color=st.INK, label="CESM2-LE ensemble mean")
