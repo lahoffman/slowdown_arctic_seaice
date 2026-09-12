@@ -58,6 +58,12 @@ else:
 # Repo root (for config/code paths only — never for data)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+# Diagnostic / working figures live inside the repo (gitignored) so they are
+# easy to find without browsing the data root; publication figures built by
+# the notebooks still go to FIGURES_DIR under DATA_ROOT.
+REPO_FIGURES_DIR = PROJECT_ROOT / 'figures' / 'output'
+REPO_FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # =============================================================================
 # NSIDC  —  sea ice extent / area

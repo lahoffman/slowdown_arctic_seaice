@@ -42,6 +42,7 @@ env/
 
 # Output
 output/
+figures/output/
 *.png
 *.pdf
 *.jpg

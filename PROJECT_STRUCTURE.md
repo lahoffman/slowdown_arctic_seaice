@@ -1,3 +1,8 @@
+> **Stale (Sep 2026):** this file describes an earlier planned layout
+> (`src/models`, `src/visualization`, `02_preprocess_data.py`, …) that was never
+> adopted. The current structure is in `README.md` and `docs/workflow.md`.
+> Kept only for reference; delete when convenient.
+
 # Project Structure Overview
 
 ## ✅ Clean Structure Implemented

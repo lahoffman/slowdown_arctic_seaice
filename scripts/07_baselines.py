@@ -24,7 +24,7 @@ Outputs (under RESULTS_DIR/baselines[/<tag>]/):
   baselines_all_splits.nc   stacked + across-split median
   baselines_summary.md      markdown table for the manuscript
   baselines_coefs.json      logistic coefficients per split
-  FIGURES_DIR/baselines_skill.png
+  <repo>/figures/output/baselines_skill[_<tag>].png
 
 Usage:
   python scripts/07_baselines.py                                   # original labels
@@ -44,6 +44,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from configs import paths
 from src.analysis import baselines as bl
+from src.plotting.baselines import plot_summary
 from src.data.cesm2le.slowdowns_relative import frequency_table
 
 START_YEAR, END_YEAR = 1990, 2040
@@ -69,42 +70,6 @@ def parse_args():
     p.add_argument("--tag", default=None,
                    help="output subdirectory / figure suffix (default: none)")
     return p.parse_args()
-
-
-def plot_summary(stacked, out_png: Path) -> None:
-    """Strip plot of per-split test skill for every model."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    metrics = ["F1", "AUPRC", "AUROC"]
-    models = [m for m in stacked.model.values if not m.startswith("cnn_run")]
-    order = [m for m in bl.BASELINE_FEATURES if m in models] + \
-            [m for m in models if m not in bl.BASELINE_FEATURES]
-    ink, muted, accent = "#1f2933", "#8a949e", "#0072B2"
-
-    fig, axes = plt.subplots(1, len(metrics), figsize=(4.2 * len(metrics), 4.6), sharey=True)
-    for ax, met in zip(axes, metrics):
-        for i, m in enumerate(order):
-            v = stacked["metric_value"].sel(metric=met, model=m).values
-            ax.scatter(v, np.full(v.size, i) + np.random.default_rng(i).uniform(-0.15, 0.15, v.size),
-                       s=18, color=accent if m.startswith("cnn") else muted, alpha=0.8, zorder=3)
-            ax.plot([np.median(v)] * 2, [i - 0.3, i + 0.3], color=ink, lw=2, zorder=4)
-        if met == "F1":
-            ax.axvline(float(stacked.attrs.get("always_positive_f1_median", np.nan)),
-                       color=ink, ls=":", lw=1, label="always-positive")
-        ax.set_yticks(range(len(order)))
-        ax.set_yticklabels(order, fontsize=9)
-        ax.set_xlabel(met + " (test)")
-        ax.grid(axis="x", color="#e5e8eb", lw=0.8, zorder=0)
-        for s in ("top", "right"):
-            ax.spines[s].set_visible(False)
-    axes[0].invert_yaxis()
-    fig.suptitle("Baselines vs CNN — per-split test skill (bar = median across 9 splits)", fontsize=11)
-    fig.tight_layout()
-    out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_png, dpi=200)
-    print(f"  figure → {out_png}")
 
 
 def main():
@@ -170,7 +135,7 @@ def main():
 
     if not args.no_fig:
         suffix = f"_{args.tag}" if args.tag else ""
-        plot_summary(stacked, paths.FIGURES_DIR / f"baselines_skill{suffix}.png")
+        plot_summary(stacked, paths.REPO_FIGURES_DIR / f"baselines_skill{suffix}.png")
 
 
 if __name__ == "__main__":

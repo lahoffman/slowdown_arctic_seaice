@@ -113,8 +113,9 @@ removes the year-dependence of the base rate produced by scaling the observed
 threshold with a near-zero ensemble-mean trend, and keeps the biomass-burning
 forcing artifact from leaking between groups. Writes one file per window × σ
 to `CESM2LE_SLOWDOWNS_DIR/cesm2le_sie_slowdown_relative_SEP_w{w}_s{s}_{demean}_1990-2100.nc`
-and prints slowdown frequency by decade and group. The original labels are
-untouched.
+and prints slowdown frequency by decade and group. Also writes a 3-panel
+diagnostic per label file and a window-sweep overlay to `figures/output/` in
+the repo. The original labels are untouched.
 
 **Depends on:** `01_cesm2le_preprocessing.py` only.
 
@@ -222,8 +223,8 @@ CNN is scored against the *new* labels (a transfer test, flagged by the
 year climatology and SIE anomaly (`cnn_attribution.json`) to quantify how
 much of the CNN output those two explain. Writes per-split and stacked
 NetCDFs, a markdown summary table and logistic coefficients to
-`results/baselines[/<tag>]/`, and `results/figures/baselines_skill[_<tag>].png`.
-No TensorFlow required.
+`results/baselines[/<tag>]/`, and `figures/output/baselines_skill[_<tag>].png`
+in the repo. No TensorFlow required.
 
 **Depends on:** `02_cesm2le_slowdowns.py`, `02_cesm2le_climate_indices.py`,
 `01_cesm2le_preprocessing.py` (SIE metrics); optionally
@@ -275,6 +276,13 @@ python scripts/07_baselines.py             # scalar baselines vs CNN
 
 # Figures: run the notebooks in figures/
 ```
+
+## Figure code
+
+All matplotlib code lives in `src/plotting/` (`style.py` for shared colours and
+helpers, one module per topic). Analysis modules under `src/data`, `src/cnn`,
+`src/analysis` never import matplotlib; scripts call the plotting functions
+and pass `paths.REPO_FIGURES_DIR / "<name>.png"` as the destination.
 
 ## Troubleshooting
 

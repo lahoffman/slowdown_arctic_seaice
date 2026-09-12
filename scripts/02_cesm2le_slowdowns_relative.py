@@ -9,8 +9,8 @@ observed threshold by a near-zero ensemble-mean trend. Original labels from
 
 Outputs (one per window × sigma):
   CESM2LE_SLOWDOWNS_DIR/cesm2le_{var}_slowdown_relative_{MON}_w{window}_s{sigma}_{demean}_1990-2100.nc
-  FIGURES_DIR/<same stem>.png          3-panel diagnostic per label file
-  FIGURES_DIR/..._window_sweep.png     frequency by onset year across windows
+  <repo>/figures/output/<same stem>.png        3-panel diagnostic per label file
+  <repo>/figures/output/..._window_sweep.png   frequency by onset year across windows
 
 Usage:
   python scripts/02_cesm2le_slowdowns_relative.py                  # 10-yr, 1σ, group demean
@@ -30,6 +30,7 @@ import xarray as xr
 from configs import paths
 from src.data.cesm2le.slowdowns import load_sie_monthly_files
 from src.data.cesm2le import slowdowns_relative as rel
+from src.plotting import slowdowns as plot
 
 
 def relative_label_file(variable: str, month: str, window: int, n_sigma: float,
@@ -90,7 +91,7 @@ def main():
                   f"{a.pool_years[0]}–{a.pool_years[1]}):")
             print(rel.frequency_table(lab[:, sel], yrs[sel]))
             if not a.no_fig:
-                rel.plot_relative_labels(ds, sie, years, paths.FIGURES_DIR / f"{out.stem}.png",
+                plot.plot_relative_labels(ds, sie, years, paths.REPO_FIGURES_DIR / f"{out.stem}.png",
                                          original=original, member=a.member,
                                          pool_years=tuple(a.pool_years))
             if s == a.n_sigma[0]:
@@ -98,7 +99,7 @@ def main():
             print()
 
     if not a.no_fig and len(sweep) > 1:
-        rel.plot_window_sweep(sweep, paths.FIGURES_DIR /
+        plot.plot_window_sweep(sweep, paths.REPO_FIGURES_DIR /
                               f"cesm2le_{a.variable}_slowdown_relative_{a.month}_window_sweep.png",
                               pool_years=tuple(a.pool_years))
 
