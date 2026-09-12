@@ -38,12 +38,12 @@ slowdown_arctic_seaice/
 │   │       └── ersst/       # ERSSTv5 download, regrid, indices, CNN prep
 │   ├── cnn/                 # splits, model, train
 │   ├── xai/                 # lrp, k_means
-│   ├── analysis/            # scalar baselines vs CNN (no TensorFlow)
-│   └── plotting/            # all figure code: style, slowdowns, baselines
+│   ├── analysis/            # baselines, composites, phase statistics (no TensorFlow)
+│   └── plotting/            # all figure code; paper.py = one function per figure
 │
 ├── scripts/                 # Numbered workflow scripts (run these)
 ├── notebooks/               # Exploratory notebooks
-├── figures/                 # Notebooks that build paper figures
+├── figures/                 # Thin notebooks calling src/plotting (legacy/ = old versions)
 ├── docs/                    # setup.md, workflow.md, REVISION_PLAN.md
 │
 └── DATA_ROOT/               # All data + outputs (outside the repo, gitignored)

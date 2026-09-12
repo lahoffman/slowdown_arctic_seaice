@@ -231,75 +231,58 @@ No TensorFlow required.
 
 ## Figures
 
-The paper figures are built from the cached outputs in `figures/` notebooks —
-no retraining required:
+Every manuscript figure has exactly one implementation, in three layers:
 
-| Notebook | Figures |
-|----------|---------|
-| `F1_FS1_FS2_slowdowns.ipynb` | NSIDC + CESM2-LE slowdown overview |
-| `FS3-7_model_performance.ipynb` | CNN performance + SST/LRP composite maps |
-| `F2-3_FS8-S9_composite_pdf.ipynb` | Slowdown probability by ENSO/IPO/Arctic-SST phase |
-| `F4_predict_obs.ipynb` | Predictions on observed (ERSSTv5) SST |
-| `FS10_sie_gmt.ipynb` | SIE vs GMT slowdown comparison |
-| `results/baselines/baselines_summary.md` | Baseline skill table (Stage 07) |
-
-## Example end-to-end run
-
-```bash
-export SLOWDOWN_DATA_ROOT=/path/to/slowdowns
-
-# Stage 01 — preprocessing
-python scripts/01_cesm2le_grid.py <raw_sst_file.nc> -o cesm2le_sst_grid.nc
-python scripts/01_cesm2le_landmask.py
-python scripts/01_cesm2le_preprocessing.py --variable all
-python scripts/01_ersst_preprocessing.py
-python scripts/01_nsidc_slowdown_sie_sia.py
-
-# Stage 02 — indices, forced response, labels
-python scripts/02_cesm2le_climate_indices.py
-python scripts/02_ersst_climate_indices.py
-python scripts/02_cesm2le_forced.py
-python scripts/02_cesm2le_slowdowns.py
-python scripts/02_cesm2le_slowdowns_gmt.py
-
-# Stage 03 — model-ready data
-python scripts/03_cesm2le_tvt_splits.py
-python scripts/03_ersst_test.py
-
-# Stage 04–06 — train, explain, predict
-python scripts/04_cesm2le_cnn_train.py
-python scripts/05_cesm2le_lrp.py          # separate process from training
-python scripts/06_cnn_predict_cesm2le.py
-python scripts/06_cnn_predict_ersst.py
-python scripts/07_baselines.py             # scalar baselines vs CNN
-
-# Figures: run the notebooks in figures/
-```
-
-## Figure code
-
-Three layers, so every figure has exactly one implementation:
-
-1. `src/plotting/<topic>.py` — pure drawing functions that take loaded data
-   and return a Figure (no file I/O, no `paths`). `style.py` holds shared
-   colours and the `tidy` / `save` helpers.
-2. `src/plotting/paper.py` — one function per manuscript figure
-   (`fig_s1`, …), assembled from the topic modules.
-3. `scripts/make_figure.py` — the entry point: loads data via `configs.paths`,
+1. `src/plotting/<topic>.py` — pure panel functions taking loaded arrays
+   (no file I/O, no `paths`): `slowdowns.py` (time series, trend segments,
+   label distributions), `maps.py` (global SST / relevance composites,
+   region boxes), `performance.py` (PR curve, confusion matrices, metric
+   strip, member timeline), `conditional.py` (P(event | phase) bars),
+   `observations.py` (Fig. 4 stack), `baselines.py`. `style.py` holds the
+   shared colour-blind-safe palette, `paper_rc`, `tidy`, `save`.
+2. `src/plotting/paper.py` — one function per figure (`fig_1` … `fig_4`,
+   `fig_s1` … `fig_s12`, plus extras), composing the panels above.
+3. `scripts/make_figure.py` — the entry point: loads data via
+   `configs.paths` (one memoised `Data` object; composites and phase
+   statistics come from a single streaming pass over splits × seeds),
    calls the `paper` function, saves to `FIGURES_DIR/paper/`.
+
+Statistics the figures depend on live in `src/analysis`:
+`composites.py` (outcome masks, streaming SST/LRP composites, 97th-pct
+normalisation, smoothing, regional means) and `phase_stats.py`
+(phase labellers, P(event | phase) with bootstrap CIs, variance explained).
 
 ```bash
 python scripts/make_figure.py --list
-python scripts/make_figure.py S1                                  # original labels → fig_S1.png
-python scripts/make_figure.py S1 --labels relative                # → fig_S1_rel_w10_s1_group.png
-python scripts/make_figure.py S1 --labels relative --window 5 --member 12 --fmt pdf
+python scripts/make_figure.py all                          # every figure, original labels
+python scripts/make_figure.py S1 S2 --labels relative      # relative-label versions
+python scripts/make_figure.py 2 S7 S8 S9 S10 regional      # composites share one data pass
+python scripts/make_figure.py S3 S4 S6 --split 3 --seed 1  # single-model figures
+python scripts/make_figure.py 4 --forced-method linear --single-model
+python scripts/make_figure.py 1 --schematic /path/to/cnn_schematic.png --fmt pdf
 ```
 
-To add a figure: write `paper.fig_<name>`, add a `load_<name>` in
-`make_figure.py`, and register both in its `FIGURES` dict. The notebooks in
-`figures/` are for exploration; they should import the same `paper` functions
-rather than re-implementing the panels. Analysis modules under `src/data`,
-`src/cnn`, `src/analysis` never import matplotlib.
+| id | figure | id | figure |
+|----|--------|----|--------|
+| `1` | schematic + NSIDC + member | `S6` | test-member timeline |
+| `2` | TP composite: SST + LRP | `S7` | SST composites, all vs CNN-filtered |
+| `3` | P(TP \| phase), test | `S8` `S9` `S10` | FP / TN / FN composites |
+| `4` | observations: votes + indices | `S11` | P(event \| phase), train, all vs TP |
+| `S1` | slowdown definition | `S12` | SIE vs GMT slowdown counts |
+| `S2` | label distributions | `phase_all` | P(slowdown \| phase), all slowdowns |
+| `S3` | PR curve | `regional` | relevance with region boxes + bars |
+| `S4` | confusion matrices | `sie_gmt_joint` | joint PDF of GMT and SIE trends |
+| `S5` | metric strip | `learning_curve` | loss vs epoch |
+
+The notebooks in `figures/` are thin wrappers that import `Data` and
+`FIGURES` from `scripts/make_figure.py` and display the same figures
+inline (`parse_args([...])` takes the same options as the CLI). The
+pre-refactor notebooks are kept in `figures/legacy/` for reference only.
+To add a figure: write `paper.fig_<name>`, add a loader/builder in
+`make_figure.py`, register it in `FIGURES`.
+
+Maps use cartopy when installed and fall back to a plain lon/lat
+pcolormesh otherwise; `cmocean` is optional (falls back to `RdBu_r`).
 
 ## Troubleshooting
 

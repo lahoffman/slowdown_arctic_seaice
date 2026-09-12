@@ -2,161 +2,218 @@
 paper.py — manuscript figures, one function per figure.
 
 Each function takes already-loaded data and returns a matplotlib Figure;
-loading and saving live in scripts/make_figure.py. Panel helpers shared by
-several figures sit at the top.
+loading and saving live in scripts/make_figure.py. Panel drawing is
+delegated to the topic modules (slowdowns, maps, performance, conditional,
+observations); nothing here touches files.
+
+Main text                               Supplement
+  fig_1  schematic + NSIDC + member       fig_s1  slowdown definition (6 panels)
+  fig_2  TP composite: SST + LRP          fig_s2  label distributions (8 panels)
+  fig_3  P(TP | phase), test              fig_s3  PR curve / threshold
+  fig_4  observations: votes + indices    fig_s4  confusion matrices
+                                          fig_s5  metric strip, all CNNs
+                                          fig_s6  test-member timeline
+                                          fig_s7  SST composites: all vs CNN-filtered
+                                          fig_s8/s9/s10  FP / TN / FN composites
+                                          fig_s11 P(event | phase), train, all vs TP
+                                          fig_s12 SIE vs GMT slowdown counts
+Extras: fig_phase_all, fig_regional_relevance, fig_sie_gmt_joint, fig_learning_curve.
 """
 
 from __future__ import annotations
 
+from typing import Dict, Optional, Sequence
+
 import numpy as np
 import xarray as xr
-from matplotlib.lines import Line2D
 
 from . import style as st
-from .style import plt
-
-# Slowdown / non-slowdown colours (colour-blind safe; replaces green/red)
-C_SLOW, C_NOSLOW = st.BLUE, st.ORANGE
-C_MEMBER = "#5e4fa2"
-C_THR_OBS, C_THR_MODEL = st.SKY, "#a6cee3"
+from . import slowdowns as sd
+from . import maps, performance as perf, conditional, observations as obs
+from .style import plt, panel_label
 
 
 # =============================================================================
-# Panel helpers
+# Figure 1 — schematic + observed record + one member
 # =============================================================================
 
-def panel_label(ax, label, size=13):
-    ax.text(0.0, 1.03, label, transform=ax.transAxes, fontsize=size,
-            fontweight="bold", va="bottom", ha="left")
-
-
-def trend_segments(ax, years, series, slopes, mask, window=10, lw=1.2,
-                   labels=("trend (slowdown)", "trend (no slowdown)")):
-    """Draw each window's fitted trend line, coloured by its slowdown flag."""
-    x = np.arange(window)
-    seen = {True: False, False: False}
-    for j in range(slopes.size):
-        if not (np.isfinite(series[j]) and np.isfinite(slopes[j])):
-            continue
-        slow = bool(mask[j])
-        lab = (labels[0] if slow else labels[1]) if not seen[slow] else ""
-        seen[slow] = True
-        ax.plot(years[j:j + window], slopes[j] * x + series[j],
-                color=C_SLOW if slow else C_NOSLOW, lw=lw, label=lab)
-
-
-def _members_bg(ax, x, arr, label="ensemble members"):
-    ax.plot(x, arr.T, lw=0.3, color=st.GRID, zorder=1)
-    return Line2D([], [], color=st.GRID, lw=2, label=label)
+def fig_1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
+          member: int = 6, schematic: Optional[np.ndarray] = None, window: int = 10,
+          varname="SIE", month="SEP", xmax=2100) -> plt.Figure:
+    """(a) CNN schematic image (optional), (b) NSIDC SIE with trend segments, (c) members."""
+    tyrs = labels["nyr"].values.astype(int)
+    trends, slow = labels["linear_trends_ens"].values, labels["slowdown"].values.astype(int)
+    if schematic is not None:
+        fig = plt.figure(figsize=(15, 6.5))
+        gs = fig.add_gridspec(2, 2, width_ratios=[2.0, 1.0], wspace=0.15, hspace=0.35)
+        ax_a = fig.add_subplot(gs[:, 0]); ax_a.imshow(schematic); ax_a.axis("off")
+        panel_label(ax_a, "(a)", y=0.98)
+        ax_b, ax_c = fig.add_subplot(gs[0, 1]), fig.add_subplot(gs[1, 1])
+        lb, lc = "(b)", "(c)"
+    else:
+        fig, (ax_b, ax_c) = plt.subplots(1, 2, figsize=(13, 4.5))
+        lb, lc = "(a)", "(b)"
+    ax_b.plot(nsidc["ice_years"], nsidc["ice"], lw=2.2, color=st.INK, label=f"NSIDC {varname}")
+    sd.trend_segments(ax_b, nsidc["ice_years"], nsidc["ice"], nsidc["trends"], nsidc["slowdown"], window)
+    ax_b.set_ylabel(f"{month} {varname} [M km²]"); ax_b.legend(frameon=False, fontsize=8)
+    panel_label(ax_b, lb)
+    h = sd.members_bg(ax_c, years, sie)
+    ax_c.plot(years, sie.mean(0), lw=1.6, color=st.INK, label="CESM2-LE ensemble mean")
+    hw = sd.member_windows(ax_c, years, sie, trends, slow, tyrs, member, window)
+    hh, _ = ax_c.get_legend_handles_labels()
+    ax_c.legend(handles=[h] + hh + [hw], frameon=False, fontsize=8)
+    ax_c.set_ylabel(f"{month} {varname} [M km²]"); ax_c.set_xlim(years[0], xmax)
+    panel_label(ax_c, lc)
+    for ax in (ax_b, ax_c):
+        st.tidy(ax); ax.set_xlabel("year")
+    return fig
 
 
 # =============================================================================
-# Figure S1 — slowdown definition (observations + CESM2-LE)
+# Figure 2 / S8–S10 — composites
+# =============================================================================
+
+def fig_2(comp: Dict, signed: bool = True, smooth: Optional[float] = None,
+          nino_boxes: bool = False) -> plt.Figure:
+    """SST and LRP composite for one outcome (TP by default). ``comp`` from CompositeAccumulator.result."""
+    boxes = None
+    if nino_boxes:
+        from src.analysis.composites import NINO_BOXES
+        boxes = {k: dict(lat=(-5, 5), lon=v) for k, v in NINO_BOXES.items()}
+    return maps.composite_pair(comp["lon"], comp["lat"], comp["sst"], comp["lrp"],
+                               signed=signed, smooth_lrp=smooth, boxes=boxes)
+
+
+fig_s8 = fig_s9 = fig_s10 = fig_2   # FP / TN / FN: same layout, different scenario
+
+
+def fig_s7(comps: Dict[str, Dict]) -> plt.Figure:
+    """SST composites: (a) all slowdowns (b) TP (c) all non-slowdowns (d) TN."""
+    order = ["ALL_SLOW", "TP", "ALL_NONSLOW", "TN"]
+    c0 = comps[order[0]]
+    return maps.composite_grid(c0["lon"], c0["lat"], [comps[k]["sst"] for k in order],
+                               ["(a)", "(b)", "(c)", "(d)"], ncol=2, kind="sst")
+
+
+def fig_regional_relevance(comp: Dict) -> plt.Figure:
+    """(a) SST (b) positive relevance with region boxes (c) regional mean relevance."""
+    from src.analysis.composites import REGIONS
+    fig = plt.figure(figsize=(18, 4.8))
+    gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 0.8], wspace=0.25)
+    ax_a, ax_b = maps.map_axes(fig, gs[0]), maps.map_axes(fig, gs[1])
+    maps.sst_panel(ax_a, comp["lon"], comp["lat"], comp["sst"], "(a)")
+    maps.lrp_panel(ax_b, comp["lon"], comp["lat"], comp["lrp"], "(b)", signed=False)
+    colors = {k: c for k, c in zip(REGIONS, st.CATEGORICAL * 3)}
+    maps.add_boxes(ax_b, REGIONS, colors)
+    ax_c = fig.add_subplot(gs[2])
+    maps.regional_relevance_bars(ax_c, comp["regional"])
+    ax_c.set_title("(c)", loc="left", weight="bold")
+    return fig
+
+
+# =============================================================================
+# Figure 3 / S11 — event dependence on index phase
+# =============================================================================
+
+def fig_3(summaries: Sequence[Dict]) -> plt.Figure:
+    """P(TP slowdown | phase) for Arctic SST, IPO, Niño3.4 (test data)."""
+    return conditional.phase_figure(summaries, show=("tp",), ylabel="P(TP slowdown | phase)")
+
+
+def fig_s11(summaries: Sequence[Dict]) -> plt.Figure:
+    """All slowdowns vs TP slowdowns by phase (training data)."""
+    return conditional.phase_figure(summaries, show=("all", "tp"), ylabel="P(event | phase)")
+
+
+def fig_phase_all(summaries: Sequence[Dict]) -> plt.Figure:
+    """P(slowdown | phase) for all slowdowns only — the model-free statement."""
+    return conditional.phase_figure(summaries, show=("all",), ylabel="P(slowdown | phase)")
+
+
+# =============================================================================
+# Figure 4 — observations
+# =============================================================================
+
+def fig_4(obs_years, fraction, obs_slow_years, obs_slow, indices: Dict, single_prob=None,
+          threshold=0.5, frac_threshold=0.15, title="") -> plt.Figure:
+    return obs.prediction_stack(obs_years, fraction, obs_slow_years, obs_slow, indices,
+                                single_prob, threshold, frac_threshold, title=title)
+
+
+# =============================================================================
+# Figure S1 — slowdown definition
 # =============================================================================
 
 def fig_s1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
-           member: int = 6, window: int = 10, varname: str = "SIE",
-           month: str = "SEP", xmax: int = 2100) -> plt.Figure:
+           member: int = 6, window: int = 10, varname="SIE", month="SEP", xmax=2100) -> plt.Figure:
     """
-    Six-panel definition figure.
-
-    (a,b) NSIDC series with coloured trend segments; trend series with the
-          observed mean and μ+σ threshold.
-    (c,d) CESM2-LE forced response with its trend classification.
-    (e,f) all members with one highlighted member and its slowdowns.
-
-    ``labels`` is either the original slowdown file (threshold_slowdown =
-    f × ensemble-mean trend) or a relative-label file (has ``z`` and
-    ``reference_trend``); panels (c,d,f) adapt to whichever is passed.
+    Six panels: (a,b) NSIDC series and trends with μ, μ+σ; (c,d) CESM2-LE forced
+    response and its trend classification; (e,f) members with one highlighted.
+    Adapts (c,d,f) to original or relative label files (the latter carry ``z``).
     """
     relative = "z" in labels
     tyrs = labels["nyr"].values.astype(int)
-    trends = labels["linear_trends_ens"].values
-    slow = labels["slowdown"].values.astype(int)
-    nyr = tyrs.size
-    ice_lab = f"{month} {varname} [M km²]"
-    trend_lab = f"{window}-yr trend [M km² yr⁻¹]"
-
+    trends, slow = labels["linear_trends_ens"].values, labels["slowdown"].values.astype(int)
+    ice_lab, trend_lab = f"{month} {varname} [M km²]", f"{window}-yr trend [M km² yr⁻¹]"
     fig, axes = plt.subplots(3, 2, figsize=(14, 12))
     (axa, axb), (axc, axd), (axe, axf) = axes
 
-    # (a) NSIDC series + segments
     axa.plot(nsidc["ice_years"], nsidc["ice"], lw=2.2, color=st.INK, label=f"NSIDC {varname}")
-    trend_segments(axa, nsidc["ice_years"], nsidc["ice"], nsidc["trends"],
-                   nsidc["slowdown"], window)
-    axa.set_ylabel(ice_lab); panel_label(axa, "(a)"); axa.legend(fontsize=8, frameon=False)
+    sd.trend_segments(axa, nsidc["ice_years"], nsidc["ice"], nsidc["trends"], nsidc["slowdown"], window)
+    sd.trend_scatter(axb, nsidc["trend_years"], nsidc["trends"], nsidc["slowdown"])
+    axb.axhline(nsidc["mean_trend"], color=st.C_THR_OBS, lw=1.5, label="mean trend μ")
+    axb.axhline(nsidc["threshold"], color=st.C_THR_OBS, lw=1.5, ls="--", label="threshold μ+σ")
 
-    # (b) NSIDC trend series
-    ty, tr, sm = nsidc["trend_years"], nsidc["trends"], nsidc["slowdown"]
-    axb.plot(ty, tr, lw=1.2, color=st.MUTED)
-    axb.scatter(ty[sm == 1], tr[sm == 1], s=22, color=C_SLOW, zorder=3, label="slowdown")
-    axb.scatter(ty[sm == 0], tr[sm == 0], s=22, color=C_NOSLOW, zorder=3, label="no slowdown")
-    axb.axhline(nsidc["mean_trend"], color=C_THR_OBS, lw=1.5, label="mean trend μ")
-    axb.axhline(nsidc["threshold"], color=C_THR_OBS, lw=1.5, ls="--", label="threshold μ+σ")
-    axb.set_ylabel(trend_lab); panel_label(axb, "(b)"); axb.legend(fontsize=8, frameon=False)
-
-    # (c,d) forced response
     if relative:
         for name, sl, c in (("CMIP6-BB mean (0–49)", slice(0, 50), st.C_CMIP6),
                             ("SMBB mean (50–99)", slice(50, 100), st.C_SMBB)):
             axc.plot(years, sie[sl].mean(0), lw=1.8, color=c, label=name)
             axd.plot(tyrs, labels["reference_trend"].values[sl][0], lw=1.8, color=c, label=name)
         axc.plot(years, sie.mean(0), lw=1.2, ls="--", color=st.INK, label="100-member mean")
-        axd.plot(tyrs, labels["linear_trends_mean"].values, lw=1.2, ls="--", color=st.INK,
-                 label="100-member mean")
+        axd.plot(tyrs, labels["linear_trends_mean"].values, lw=1.2, ls="--", color=st.INK, label="100-member mean")
         axd.axhline(0, color=st.MUTED, lw=0.8)
     else:
-        ens_mean = sie.mean(0)
         tm, thr = labels["linear_trends_mean"].values, labels["threshold_slowdown"].values
-        mean_mask = (tm > thr).astype(int)
-        axc.plot(years, ens_mean, lw=2.2, color=st.INK, label="CESM2-LE ensemble mean")
-        trend_segments(axc, years, ens_mean, tm, mean_mask, window)
-        axd.plot(tyrs, tm, lw=1.2, color=st.MUTED)
-        axd.scatter(tyrs[mean_mask == 1], tm[mean_mask == 1], s=22, color=C_SLOW, zorder=3, label="slowdown")
-        axd.scatter(tyrs[mean_mask == 0], tm[mean_mask == 0], s=22, color=C_NOSLOW, zorder=3, label="no slowdown")
-        axd.axhline(nsidc["threshold"], color=C_THR_OBS, lw=1.5, ls="--", label="obs threshold")
-        axd.plot(tyrs, thr, color=C_THR_MODEL, lw=1.8, label="model threshold f × ens-mean trend")
-    axc.set_ylabel(ice_lab); panel_label(axc, "(c)"); axc.legend(fontsize=8, frameon=False)
-    axd.set_ylabel(trend_lab); panel_label(axd, "(d)"); axd.legend(fontsize=8, frameon=False)
+        mm = (tm > thr).astype(int)
+        axc.plot(years, sie.mean(0), lw=2.2, color=st.INK, label="CESM2-LE ensemble mean")
+        sd.trend_segments(axc, years, sie.mean(0), tm, mm, window)
+        sd.trend_scatter(axd, tyrs, tm, mm)
+        axd.axhline(nsidc["threshold"], color=st.C_THR_OBS, lw=1.5, ls="--", label="obs threshold")
+        axd.plot(tyrs, thr, color=st.C_THR_MODEL, lw=1.8, label="model threshold f × ens-mean trend")
 
-    # (e) members + highlighted member with slowdown windows
-    h = _members_bg(axe, years, sie)
-    for j in range(nyr):
-        if slow[member, j]:
-            i0 = int(np.where(years == tyrs[j])[0][0])
-            axe.plot(years[i0:i0 + window], trends[member, j] * np.arange(window) + sie[member, i0],
-                     lw=2.2, color=st.C_EVENT, zorder=5)
+    h = sd.members_bg(axe, years, sie)
     axe.plot(years, sie.mean(0), lw=1.5, color=st.INK, label="ensemble mean")
-    axe.plot(years, sie[member], lw=1.2, color=C_MEMBER, label=f"member {member}")
-    hh, ll = axe.get_legend_handles_labels()
-    axe.legend(handles=[h] + hh + [Line2D([], [], color=st.C_EVENT, lw=2.2, label="slowdown windows")],
-               fontsize=8, frameon=False)
-    axe.set_ylabel(ice_lab); panel_label(axe, "(e)")
+    hw = sd.member_windows(axe, years, sie, trends, slow, tyrs, member, window)
+    hh, _ = axe.get_legend_handles_labels()
+    axe.legend(handles=[h] + hh + [hw], fontsize=8, frameon=False)
 
-    # (f) member trends (or z) with thresholds
     if relative:
         z = labels["z"].values
-        h = _members_bg(axf, tyrs, z)
-        axf.plot(tyrs, z[member], lw=1.2, color=C_MEMBER, label=f"member {member}")
-        axf.scatter(tyrs[slow[member] == 1], z[member][slow[member] == 1], s=24,
-                    color=st.C_EVENT, zorder=5, label="slowdown")
+        h = sd.members_bg(axf, tyrs, z)
+        axf.plot(tyrs, z[member], lw=1.2, color=st.C_MEMBER, label=f"member {member}")
+        axf.scatter(tyrs[slow[member] == 1], z[member][slow[member] == 1], s=24, color=st.C_EVENT,
+                    zorder=5, label="slowdown")
         ns = float(labels.attrs.get("n_sigma", 1.0))
         axf.axhline(ns, color=st.INK, ls="--", lw=1, label=f"±{ns:g}σ"); axf.axhline(-ns, color=st.INK, ls="--", lw=1)
-        axf.axhline(0, color=st.MUTED, lw=0.8)
-        axf.set_ylabel("trend anomaly z [σ]")
+        axf.axhline(0, color=st.MUTED, lw=0.8); axf.set_ylabel("trend anomaly z [σ]")
     else:
-        h = _members_bg(axf, tyrs, trends)
+        h = sd.members_bg(axf, tyrs, trends)
         axf.plot(tyrs, labels["linear_trends_mean"].values, lw=1.5, color=st.INK, label="ensemble mean")
-        axf.axhline(nsidc["threshold"], color=C_THR_OBS, lw=1.5, ls="--", label="obs threshold")
-        axf.plot(tyrs, labels["threshold_slowdown"].values, color=C_THR_MODEL, lw=1.8, label="model threshold")
-        axf.plot(tyrs, trends[member], lw=1.2, color=C_MEMBER, label=f"member {member}")
-        axf.scatter(tyrs[slow[member] == 1], trends[member][slow[member] == 1], s=24,
-                    color=st.C_EVENT, zorder=5, label="slowdown")
-        axf.set_ylabel(trend_lab)
-    hh, ll = axf.get_legend_handles_labels()
+        axf.axhline(nsidc["threshold"], color=st.C_THR_OBS, lw=1.5, ls="--", label="obs threshold")
+        axf.plot(tyrs, labels["threshold_slowdown"].values, color=st.C_THR_MODEL, lw=1.8, label="model threshold")
+        axf.plot(tyrs, trends[member], lw=1.2, color=st.C_MEMBER, label=f"member {member}")
+        axf.scatter(tyrs[slow[member] == 1], trends[member][slow[member] == 1], s=24, color=st.C_EVENT,
+                    zorder=5, label="slowdown"); axf.set_ylabel(trend_lab)
+    hh, _ = axf.get_legend_handles_labels()
     axf.legend(handles=[h] + hh, fontsize=8, frameon=False)
-    panel_label(axf, "(f)")
 
+    for ax, lab in zip((axa, axc, axe), "ace"):
+        ax.set_ylabel(ice_lab); panel_label(ax, f"({lab})")
+    for ax, lab in zip((axb, axd), "bd"):
+        ax.set_ylabel(trend_lab); panel_label(ax, f"({lab})")
+    panel_label(axf, "(f)")
+    for ax in (axa, axb, axc, axd):
+        ax.legend(fontsize=8, frameon=False)
     for ax in axes.ravel():
         st.tidy(ax)
     for ax in (axa, axb):
@@ -165,8 +222,81 @@ def fig_s1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
         ax.set_xlim(years[0], xmax)
     for ax in (axe, axf):
         ax.set_xlabel("year")
-    tag = ("relative labels: z = (trend − group-mean trend)/σ > "
-           f"{labels.attrs.get('n_sigma', 1):g}" if relative
-           else "original labels: trend > f_obs × ensemble-mean trend")
+    tag = (f"relative labels: z = (trend − group-mean trend)/σ > {labels.attrs.get('n_sigma', 1):g}"
+           if relative else "original labels: trend > f_obs × ensemble-mean trend")
     fig.suptitle(f"Figure S1 — slowdown definition ({tag})", fontsize=11)
+    return fig
+
+
+# =============================================================================
+# Figure S2 — label distributions
+# =============================================================================
+
+def fig_s2(sie: np.ndarray, years: np.ndarray, labels: xr.Dataset, split_year: int = 2040,
+           varlabel="SEP SIE") -> plt.Figure:
+    """Left column: all onset years. Right column: onsets before ``split_year``."""
+    tyrs = labels["nyr"].values.astype(int)
+    slow = labels["slowdown"].values.astype(int)
+    idx = np.searchsorted(years, tyrs)
+    sie_win = sie[:, idx]
+    early = tyrs < split_year
+    fig, axes = plt.subplots(4, 2, figsize=(13, 15))
+    sd.label_distributions(axes[:, 0], slow, sie_win, varlabel, f"{tyrs[0]}–{tyrs[-1]}")
+    sd.label_distributions(axes[:, 1], slow[:, early], sie_win[:, early], varlabel,
+                           f"{tyrs[0]}–{split_year - 1}", second=slow[:, ~early].sum(1),
+                           second_label=f"{split_year}–{tyrs[-1]}")
+    for ax, lab in zip(axes.T.ravel(), "abcdefgh"):
+        panel_label(ax, f"({lab})")
+    return fig
+
+
+# =============================================================================
+# Figures S3–S6 — model performance
+# =============================================================================
+
+def fig_s3(y_true, y_score) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(7, 4.2))
+    perf.pr_curve(ax, y_true, y_score)
+    return fig
+
+
+def fig_s4(y_true: Dict, y_score: Dict, threshold: float) -> plt.Figure:
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    for ax, part, lab in zip(axes, ("train", "test"), "ab"):
+        perf.confusion_panel(ax, y_true[part], y_score[part], threshold, f"({lab})")
+    return fig
+
+
+def fig_s5(values: Dict[str, np.ndarray]) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    perf.metric_strip(ax, values)
+    return fig
+
+
+def fig_s6(y_true, y_pred, years, member_labels) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(9, 5))
+    perf.member_timeline(ax, y_true, y_pred, years, member_labels)
+    return fig
+
+
+def fig_learning_curve(history: Dict) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(6.5, 3.8))
+    perf.learning_curve(ax, history)
+    return fig
+
+
+# =============================================================================
+# Figure S12 — SIE vs GMT slowdowns
+# =============================================================================
+
+def fig_s12(years, sie_count, gmt_count, both_count) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(10, 4.5))
+    sd.sie_gmt_counts(ax, years, sie_count, gmt_count, both_count)
+    return fig
+
+
+def fig_sie_gmt_joint(gmt_tr, sie_tr) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(7, 6))
+    sd.joint_trend_pdf(ax, gmt_tr, sie_tr)
+    st.tidy(ax)
     return fig

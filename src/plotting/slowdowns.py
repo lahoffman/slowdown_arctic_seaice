@@ -1,17 +1,139 @@
 """
-slowdowns.py — diagnostic figures for relative slowdown labels.
+slowdowns.py — sea ice time-series, trend and label-distribution panels.
+
+Panel helpers (trend_segments, members_bg, trend_scatter, distributions)
+are shared by Figs. 1, S1 and S2; the relative-label diagnostics at the
+bottom are used by 02_cesm2le_slowdowns_relative.py.
 """
 
 from __future__ import annotations
 
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 import xarray as xr
+from matplotlib.lines import Line2D
+from matplotlib.ticker import FormatStrFormatter
 
 from src.data.cesm2le.slowdowns_relative import frequency_by_year
 from . import style as st
 from .style import plt
+
+
+# =============================================================================
+# Panel helpers
+# =============================================================================
+
+def trend_segments(ax, years, series, slopes, mask, window=10, lw=1.2,
+                   labels=("trend (slowdown)", "trend (no slowdown)")):
+    """Fitted trend line for each window, coloured by its slowdown flag."""
+    x = np.arange(window)
+    seen = {True: False, False: False}
+    for j in range(slopes.size):
+        if not (np.isfinite(series[j]) and np.isfinite(slopes[j])):
+            continue
+        slow = bool(mask[j])
+        lab = (labels[0] if slow else labels[1]) if not seen[slow] else ""
+        seen[slow] = True
+        ax.plot(years[j:j + window], slopes[j] * x + series[j],
+                color=st.C_SLOW if slow else st.C_NOSLOW, lw=lw, label=lab)
+
+
+def members_bg(ax, x, arr, label="ensemble members"):
+    """All members as thin grey lines; returns a legend handle."""
+    ax.plot(x, np.asarray(arr).T, lw=0.3, color=st.GRID, zorder=1)
+    return Line2D([], [], color=st.GRID, lw=2, label=label)
+
+
+def trend_scatter(ax, years, trends, mask, line_color=st.MUTED):
+    """Trend series with slowdown / non-slowdown points."""
+    ax.plot(years, trends, lw=1.2, color=line_color)
+    ax.scatter(years[mask == 1], trends[mask == 1], s=22, color=st.C_SLOW, zorder=3, label="slowdown")
+    ax.scatter(years[mask == 0], trends[mask == 0], s=22, color=st.C_NOSLOW, zorder=3, label="no slowdown")
+
+
+def member_windows(ax, years, sie, trends, slow, tyrs, member, window=10, lw=2.2):
+    """Highlight one member's series and its slowdown trend windows."""
+    for j in range(tyrs.size):
+        if slow[member, j]:
+            i0 = int(np.where(years == tyrs[j])[0][0])
+            ax.plot(years[i0:i0 + window], trends[member, j] * np.arange(window) + sie[member, i0],
+                    lw=lw, color=st.C_EVENT, zorder=5)
+    ax.plot(years, sie[member], lw=1.2, color=st.C_MEMBER, label=f"member {member}")
+    return Line2D([], [], color=st.C_EVENT, lw=lw, label="slowdown windows")
+
+
+def _fmt(ax, x="%.1f", y="%.2f"):
+    ax.xaxis.set_major_formatter(FormatStrFormatter(x))
+    ax.yaxis.set_major_formatter(FormatStrFormatter(y))
+
+
+def label_distributions(axes, slow: np.ndarray, sie_win: np.ndarray, varlabel="SEP SIE",
+                        period: str = "", second: Optional[np.ndarray] = None,
+                        second_label: str = ""):
+    """
+    Four panels (Fig. S2 column): events per member, class fraction, SIE PDF,
+    SIE-anomaly PDF. ``second`` optionally overlays a second per-member count.
+    """
+    a, b, c, d = axes
+    per = slow.sum(1)
+    mx = int(max(per.max(), second.max() if second is not None else 0))
+    bins = np.arange(-0.5, mx + 1.5)
+    a.hist(per, bins=bins, density=True, color=st.BLUE, alpha=0.75, label=period or None)
+    if second is not None:
+        a.hist(second, bins=bins, density=True, color=st.ORANGE, alpha=0.4, label=second_label)
+        a.legend(frameon=False)
+    a.set_xlabel("slowdown events per member"); a.set_ylabel("frequency"); _fmt(a, "%.0f")
+    flat = slow.ravel()
+    b.bar([0, 1], [1 - flat.mean(), flat.mean()], color="#9a9a9a", width=0.8)
+    b.set_xticks([0, 1]); b.set_xticklabels(["no slowdown", "slowdown"])
+    b.set_ylabel("fraction of windows"); b.yaxis.set_major_formatter(FormatStrFormatter("%.2f"))
+    for ax, data, xl in ((c, sie_win, f"{varlabel} [M km²]"),
+                         (d, sie_win - np.nanmean(sie_win, 0), f"{varlabel} anomaly [M km²]")):
+        ax.hist(data[slow == 0], bins=30, density=True, alpha=0.6, color=st.C_NOSLOW, label="no slowdown")
+        ax.hist(data[slow == 1], bins=30, density=True, alpha=0.6, color=st.C_SLOW, label="slowdown")
+        ax.set_xlabel(xl); ax.set_ylabel("density"); ax.legend(frameon=False); _fmt(ax)
+    for ax in axes:
+        if period:
+            ax.set_title(period, fontsize=9, color=st.MUTED, loc="right")
+        st.tidy(ax)
+
+
+def sie_gmt_counts(ax, years, sie_count, gmt_count, both_count):
+    """Members with an SIE / GMT / both slowdown per onset year (Fig. S12)."""
+    ax.plot(years, sie_count, color=st.SKY, lw=2.2, label="September SIE slowdowns")
+    ax.plot(years, gmt_count, color=st.ORANGE, lw=2.2, label="yearly GMT slowdowns")
+    ax.plot(years, both_count, color="#9a9a9a", lw=2.2, label="both (SIE & GMT)")
+    ax.set_ylabel("number of members with slowdowns"); ax.set_xlabel("onset year")
+    ax.set_xlim(years[0], years[-1]); ax.set_ylim(bottom=0); ax.legend(frameon=False)
+    st.tidy(ax)
+
+
+def joint_trend_pdf(ax, gmt_tr, sie_tr):
+    """Joint KDE of GMT vs SIE decadal trends with correlation annotation."""
+    from scipy.stats import gaussian_kde, pearsonr
+    ok = np.isfinite(gmt_tr) & np.isfinite(sie_tr)
+    x, y = gmt_tr[ok], sie_tr[ok]
+    try:
+        xg = np.linspace(*np.percentile(x, [0.5, 99.5]), 150)
+        yg = np.linspace(*np.percentile(y, [0.5, 99.5]), 150)
+        X, Y = np.meshgrid(xg, yg)
+        Z = gaussian_kde(np.vstack([x, y]))(np.vstack([X.ravel(), Y.ravel()])).reshape(X.shape)
+        cf = ax.contourf(X, Y, Z, levels=20, cmap="Blues")
+        plt.colorbar(cf, ax=ax, label="density")
+    except np.linalg.LinAlgError:          # degenerate sample → hexbin
+        hb = ax.hexbin(x, y, gridsize=40, cmap="Blues", mincnt=1)
+        plt.colorbar(hb, ax=ax, label="count")
+    ax.axhline(0, color=st.INK, lw=0.5, ls="--"); ax.axvline(0, color=st.INK, lw=0.5, ls="--")
+    ax.set_xlabel("GMT decadal trend [K yr⁻¹]"); ax.set_ylabel("SIE decadal trend [M km² yr⁻¹]")
+    r = pearsonr(x, y)[0]
+    ax.text(0.03, 0.97, f"r = {r:.3f}", transform=ax.transAxes, va="top",
+            bbox=dict(boxstyle="round", fc="white", alpha=0.8, lw=0))
+
+
+# =============================================================================
+# Relative-label diagnostics
+# =============================================================================
 
 
 def plot_relative_labels(ds: xr.Dataset, sie: np.ndarray, years: np.ndarray,
