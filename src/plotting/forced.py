@@ -47,9 +47,10 @@ def plot_group_forced_difference(
     """
     i_c, i_s = names.index("cmip6"), names.index("smbb")
     sel = (years >= period[0]) & (years <= period[1])
+    if landmask is not None:                                    # land fill values must not enter any mean
+        groupmean = np.where(landmask[None, None] == 1, np.nan, groupmean)
+        ensmean = np.where(landmask[None] == 1, np.nan, ensmean)
     diff = groupmean[i_s] - groupmean[i_c]                      # (nyear, nlat, nlon)
-    if landmask is not None:
-        diff = np.where(landmask[None] == 1, np.nan, diff)
     diff_map = np.nanmean(diff[sel], axis=0)
     vmax = float(np.nanpercentile(np.abs(diff_map), 99))
 
@@ -76,9 +77,7 @@ def plot_group_forced_difference(
     ax_c.plot(years, d, color=st.INK)
     ax_c.axvspan(*period, color=st.GRID, zorder=0)
     ax_c.set_xlabel("year"); ax_c.set_ylabel("SMBB − CMIP6, °C")
-    ax_c.set_title("(c) Arctic forced difference, SMBB − CMIP6\n"
-                   "     (what leaks into the maps under 100-member demeaning)",
-                   loc="left", weight="bold")
+    ax_c.set_title("(c) Arctic forced difference, SMBB − CMIP6", loc="left", weight="bold")
     st.tidy(ax_c)
     st.save(fig, out_png)
 
