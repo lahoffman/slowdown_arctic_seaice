@@ -60,15 +60,16 @@ def fig_1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
     tyrs = labels["nyr"].values.astype(int)
     trends, slow = labels["linear_trends_ens"].values, labels["slowdown"].values.astype(int)
     if schematic is not None:
+        # Schematic on top at full width, (b) and (c) side by side below.  The figure is
+        # kept narrow (12 in) so that, scaled to the GRL column, the fonts stay legible.
         schematic = _trim_white(schematic)
-        asp = schematic.shape[1] / schematic.shape[0]           # width / height
-        h = 8.0                                                  # inches; panels (b,c) stack in this height
-        w_left, w_right = h * asp, 7.5
-        fig = plt.figure(figsize=(w_left + w_right + 0.8, h))
-        gs = fig.add_gridspec(2, 2, width_ratios=[w_left, w_right], wspace=0.12, hspace=0.3)
-        ax_a = fig.add_subplot(gs[:, 0]); ax_a.imshow(schematic); ax_a.axis("off")
-        panel_label(ax_a, "(a)", y=0.98)
-        ax_b, ax_c = fig.add_subplot(gs[0, 1]), fig.add_subplot(gs[1, 1])
+        w = 12.0
+        h_top = w * schematic.shape[0] / schematic.shape[1] * 0.7    # schematic drawn at ~70 % width
+        fig = plt.figure(figsize=(w, h_top + 4.6))
+        gs = fig.add_gridspec(2, 2, height_ratios=[h_top, 4.2], hspace=0.28, wspace=0.22)
+        ax_a = fig.add_subplot(gs[0, :]); ax_a.imshow(schematic); ax_a.axis("off")
+        panel_label(ax_a, "(a)", x=-0.02, y=0.98)
+        ax_b, ax_c = fig.add_subplot(gs[1, 0]), fig.add_subplot(gs[1, 1])
         lb, lc = "(b)", "(c)"
     else:
         fig, (ax_b, ax_c) = plt.subplots(1, 2, figsize=(13, 4.5))
@@ -82,8 +83,8 @@ def fig_1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
     ax_c.plot(years, sie.mean(0), lw=1.6, color=st.INK, label="CESM2-LE ensemble mean")
     hw = sd.member_windows(ax_c, years, sie, trends, slow, tyrs, member, window)
     hh, _ = ax_c.get_legend_handles_labels()
-    ax_c.legend(handles=[h] + hh + [hw], frameon=False, loc="upper right", ncol=2)
-    ax_c.set_ylim(top=ax_c.get_ylim()[1] + 0.25 * np.ptp(ax_c.get_ylim()))
+    ax_c.legend(handles=[h] + hh + [hw], frameon=False, loc="upper right", ncol=1)
+    ax_c.set_ylim(top=ax_c.get_ylim()[1] + 0.45 * np.ptp(ax_c.get_ylim()))
     ax_c.set_ylabel(f"{month} {varname} [M km²]"); ax_c.set_xlim(years[0], xmax)
     panel_label(ax_c, lc)
     for ax in (ax_b, ax_c):
