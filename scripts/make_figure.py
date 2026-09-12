@@ -6,13 +6,13 @@ statistics in src/analysis. Figures are saved to FIGURES_DIR/paper/.
 
 Usage:
   python scripts/make_figure.py --list
-  python scripts/make_figure.py S1                          # original labels
-  python scripts/make_figure.py S1 --labels relative        # relative labels (w10, 1σ, group)
-  python scripts/make_figure.py 2 S7 S8 S9 S10 regional     # composites share one pass over the data
+  python scripts/make_figure.py S1                          # relative labels (the default) → fig_S1.pdf
+  python scripts/make_figure.py S1 --labels original --suffix _orig
+  python scripts/make_figure.py 2 S8 S9 S10 S11 regional     # composites share one pass over the data
   python scripts/make_figure.py 4 --forced-method ensmean
   python scripts/make_figure.py all --fmt pdf
 
-Figure ids: 1 2 3 4 S1 … S12 plus extras phase_all, regional, sie_gmt_joint, learning_curve.
+Figure ids: 1 2 3 4 S1 … S13 plus extras phase_all, regional, sie_gmt_joint, learning_curve.
 """
 
 import argparse
@@ -84,7 +84,7 @@ class Data:
             return {**out, "threshold": thr, "mean_trend": thr / frac}
         return self.get("nsidc", _load)
 
-    # -- one split × seed (S3, S4, S6, learning curve) ---------------------------
+    # -- one split × seed (S4, S5, S7, learning curve) ---------------------------
     def single(self):
         def _load():
             k, r = self.a.split, self.a.seed
@@ -98,7 +98,7 @@ class Data:
                         y_score=score, threshold=thr, history=hist)
         return self.get("single", _load)
 
-    # -- metrics for all splits (S5) --------------------------------------------
+    # -- metrics for all splits (S6) --------------------------------------------
     def metrics(self):
         def _load():
             vals = {k: [] for k in METRIC_KEYS}
@@ -200,7 +200,18 @@ class Data:
                         title=f"forced removal: {a.forced_method}")
         return self.get("obs", _load)
 
-    # -- SIE vs GMT (S12) -------------------------------------------------------
+    # -- baselines (S3) -----------------------------------------------------------
+    def baselines(self):
+        def _load():
+            a = self.a
+            tag = a.baselines_tag or ("" if a.labels == "original" else f"rel_w{a.window}_s{a.n_sigma:g}")
+            f = paths.RESULTS_DIR / "baselines" / tag / "baselines_all_splits.nc"
+            if not f.exists():
+                raise FileNotFoundError(f"{f} — run 07_baselines.py" + (f" --tag {tag}" if tag else ""))
+            return xr.open_dataset(f).load()
+        return self.get("baselines", _load)
+
+    # -- SIE vs GMT (S13) -------------------------------------------------------
     def sie_gmt(self):
         def _load():
             with xr.open_dataset(paths.cesm2le_slowdown_file("sie", self.a.month)) as ds:
@@ -246,7 +257,7 @@ def build_composite(scenario, **kw):
 
 def build_s7(d):
     acc = d.pass_over_splits()["acc"]
-    return paper.fig_s7({k: acc.result(k) for k in ("ALL_SLOW", "TP", "ALL_NONSLOW", "TN")})
+    return paper.fig_s8({k: acc.result(k) for k in ("ALL_SLOW", "TP", "ALL_NONSLOW", "TN")})
 
 
 def build_regional(d):
@@ -263,7 +274,7 @@ def build_s6(d):
     yt, ys = s["y_true"]["test"], s["y_score"]["test"]
     years = np.arange(START_YEAR, START_YEAR + yt.size // BLOCK_SIZE)
     members = np.arange(d.a.split * BLOCK_SIZE, (d.a.split + 1) * BLOCK_SIZE)
-    return paper.fig_s6(yt, (ys >= s["threshold"]).astype(int), years, members)
+    return paper.fig_s7(yt, (ys >= s["threshold"]).astype(int), years, members)
 
 
 FIGURES = {
@@ -273,16 +284,17 @@ FIGURES = {
     "4":   (lambda d: paper.fig_4(**d.observations()), "observations: CNN votes + indices"),
     "S1":  (lambda d: paper.fig_s1(**_ts_args(d)), "slowdown definition, 6 panels"),
     "S2":  (build_s2, "label distributions, 8 panels"),
-    "S3":  (lambda d: paper.fig_s3(d.single()["y_true"]["test"], d.single()["y_score"]["test"]), "PR curve"),
-    "S4":  (lambda d: paper.fig_s4(d.single()["y_true"], d.single()["y_score"], d.single()["threshold"]), "confusion matrices"),
-    "S5":  (lambda d: paper.fig_s5(d.metrics()), "metric strip, all CNNs"),
-    "S6":  (build_s6, "test-member slowdown timeline"),
-    "S7":  (build_s7, "SST composites: all vs CNN-filtered"),
-    "S8":  (build_composite("FP"), "FP composite"),
-    "S9":  (build_composite("TN"), "TN composite"),
-    "S10": (build_composite("FN"), "FN composite"),
-    "S11": (lambda d: paper.fig_s11(d.pass_over_splits()["summaries"]["train"]), "P(event | phase), train, all vs TP"),
-    "S12": (lambda d: paper.fig_s12(*(d.sie_gmt()[k] for k in ("years", "sie_count", "gmt_count", "both_count"))), "SIE vs GMT slowdown counts"),
+    "S3":  (lambda d: paper.fig_s3(d.baselines()), "baselines vs CNN skill (07_baselines.py)"),
+    "S4":  (lambda d: paper.fig_s4(d.single()["y_true"]["test"], d.single()["y_score"]["test"]), "PR curve"),
+    "S5":  (lambda d: paper.fig_s5(d.single()["y_true"], d.single()["y_score"], d.single()["threshold"]), "confusion matrices"),
+    "S6":  (lambda d: paper.fig_s6(d.metrics()), "metric strip, all CNNs"),
+    "S7":  (build_s6, "test-member slowdown timeline"),
+    "S8":  (build_s7, "SST composites: all vs CNN-filtered"),
+    "S9":  (build_composite("FP"), "FP composite"),
+    "S10": (build_composite("TN"), "TN composite"),
+    "S11": (build_composite("FN"), "FN composite"),
+    "S12": (lambda d: paper.fig_s12(d.pass_over_splits()["summaries"]["train"]), "P(event | phase), train, all vs TP"),
+    "S13": (lambda d: paper.fig_s13(*(d.sie_gmt()[k] for k in ("years", "sie_count", "gmt_count", "both_count"))), "SIE vs GMT slowdown counts"),
     "phase_all":      (lambda d: paper.fig_phase_all(d.pass_over_splits()["summaries"]["train"]), "P(slowdown | phase), all slowdowns"),
     "regional":       (build_regional, "TP composite with region boxes + regional relevance"),
     "sie_gmt_joint":  (lambda d: paper.fig_sie_gmt_joint(d.sie_gmt()["gmt_tr"], d.sie_gmt()["sie_tr"]), "joint PDF of GMT and SIE trends"),
@@ -295,12 +307,13 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("figures", nargs="*", help="figure ids (see --list) or 'all'")
     p.add_argument("--list", action="store_true")
-    p.add_argument("--labels", default="original", choices=["original", "relative"])
+    p.add_argument("--labels", default="relative", choices=["original", "relative"],
+                   help="slowdown label definition (default: relative, the manuscript's)")
     p.add_argument("--window", type=int, default=10)
     p.add_argument("--n-sigma", type=float, default=1.0)
     p.add_argument("--demean", default="group", choices=["group", "all"])
     p.add_argument("--member", type=int, default=6, help="highlighted member (Figs 1, S1)")
-    p.add_argument("--split", type=int, default=0, help="split for single-model figures (S3, S4, S6)")
+    p.add_argument("--split", type=int, default=0, help="split for single-model figures (S4, S5, S7)")
     p.add_argument("--seed", type=int, default=0, help="seed index for single-model figures")
     p.add_argument("--variable", default="sie", choices=["sie", "sia"])
     p.add_argument("--month", default="SEP")
@@ -308,6 +321,9 @@ def parse_args(argv=None):
     p.add_argument("--single-model", action="store_true", help="Fig 4: add the single-CNN panel")
     p.add_argument("--schematic", default=str(paths.DATA_ROOT / "models/schematic/cnn_schematic.png"))
     p.add_argument("--n-boot", type=int, default=2000)
+    p.add_argument("--baselines-tag", default=None,
+                   help="results/baselines/<tag> to plot in S3 (default: derived from --labels)")
+    p.add_argument("--suffix", default="", help="appended to output names, e.g. _orig")
     p.add_argument("--fmt", default="png", choices=["png", "pdf", "svg"])
     p.add_argument("--dpi", type=int, default=200)
     p.add_argument("--out-dir", type=Path, default=None)
@@ -324,7 +340,7 @@ def main():
     st.paper_rc()
     d = Data(a)
     out_dir = a.out_dir or paths.FIGURES_DIR / "paper"
-    tag = "" if a.labels == "original" else f"_rel_w{a.window}_s{a.n_sigma:g}_{a.demean}"
+    tag = a.suffix
     for fid in ids:
         build, _ = FIGURES[fid]
         print(f"[{fid}]")

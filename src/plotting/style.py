@@ -45,8 +45,8 @@ def panel_label(ax, label: str, size: float = 12, x: float = 0.0, y: float = 1.0
 
 
 def tidy(ax, grid_axis: str = "y") -> None:
-    """Recessive grid, no top/right spines."""
-    ax.grid(axis=grid_axis, color=GRID, lw=0.8, zorder=0)
+    """No grid, no top/right spines (``grid_axis`` kept for call compatibility)."""
+    ax.grid(False)
     for sp in ("top", "right"):
         ax.spines[sp].set_visible(False)
 

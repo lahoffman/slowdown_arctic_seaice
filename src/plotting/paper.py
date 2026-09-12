@@ -9,14 +9,15 @@ observations); nothing here touches files.
 Main text                               Supplement
   fig_1  schematic + NSIDC + member       fig_s1  slowdown definition (6 panels)
   fig_2  TP composite: SST + LRP          fig_s2  label distributions (8 panels)
-  fig_3  P(TP | phase), test              fig_s3  PR curve / threshold
-  fig_4  observations: votes + indices    fig_s4  confusion matrices
-                                          fig_s5  metric strip, all CNNs
-                                          fig_s6  test-member timeline
-                                          fig_s7  SST composites: all vs CNN-filtered
-                                          fig_s8/s9/s10  FP / TN / FN composites
-                                          fig_s11 P(event | phase), train, all vs TP
-                                          fig_s12 SIE vs GMT slowdown counts
+  fig_3  P(TP | phase), test              fig_s3  baselines vs CNN skill
+  fig_4  observations: votes + indices    fig_s4  PR curve / threshold
+                                          fig_s5  confusion matrices
+                                          fig_s6  metric strip, all CNNs
+                                          fig_s7  test-member timeline
+                                          fig_s8  SST composites: all vs CNN-filtered
+                                          fig_s9/s10/s11  FP / TN / FN composites
+                                          fig_s12 P(event | phase), train, all vs TP
+                                          fig_s13 SIE vs GMT slowdown counts
 Extras: fig_phase_all, fig_regional_relevance, fig_sie_gmt_joint, fig_learning_curve.
 """
 
@@ -70,7 +71,7 @@ def fig_1(nsidc: dict, sie: np.ndarray, years: np.ndarray, labels: xr.Dataset,
 
 
 # =============================================================================
-# Figure 2 / S8–S10 — composites
+# Figure 2 / S9–S11 — composites
 # =============================================================================
 
 def fig_2(comp: Dict, signed: bool = True, smooth: Optional[float] = None,
@@ -84,10 +85,10 @@ def fig_2(comp: Dict, signed: bool = True, smooth: Optional[float] = None,
                                signed=signed, smooth_lrp=smooth, boxes=boxes)
 
 
-fig_s8 = fig_s9 = fig_s10 = fig_2   # FP / TN / FN: same layout, different scenario
+fig_s9 = fig_s10 = fig_s11 = fig_2   # FP / TN / FN: same layout, different scenario
 
 
-def fig_s7(comps: Dict[str, Dict]) -> plt.Figure:
+def fig_s8(comps: Dict[str, Dict]) -> plt.Figure:
     """SST composites: (a) all slowdowns (b) TP (c) all non-slowdowns (d) TN."""
     order = ["ALL_SLOW", "TP", "ALL_NONSLOW", "TN"]
     c0 = comps[order[0]]
@@ -112,7 +113,7 @@ def fig_regional_relevance(comp: Dict) -> plt.Figure:
 
 
 # =============================================================================
-# Figure 3 / S11 — event dependence on index phase
+# Figure 3 / S12 — event dependence on index phase
 # =============================================================================
 
 def fig_3(summaries: Sequence[Dict]) -> plt.Figure:
@@ -120,7 +121,7 @@ def fig_3(summaries: Sequence[Dict]) -> plt.Figure:
     return conditional.phase_figure(summaries, show=("tp",), ylabel="P(TP slowdown | phase)")
 
 
-def fig_s11(summaries: Sequence[Dict]) -> plt.Figure:
+def fig_s12(summaries: Sequence[Dict]) -> plt.Figure:
     """All slowdowns vs TP slowdowns by phase (training data)."""
     return conditional.phase_figure(summaries, show=("all", "tp"), ylabel="P(event | phase)")
 
@@ -251,29 +252,39 @@ def fig_s2(sie: np.ndarray, years: np.ndarray, labels: xr.Dataset, split_year: i
 
 
 # =============================================================================
-# Figures S3–S6 — model performance
+# Figure S3 — scalar baselines vs CNN
 # =============================================================================
 
-def fig_s3(y_true, y_score) -> plt.Figure:
+def fig_s3(stacked: xr.Dataset) -> plt.Figure:
+    """Per-split test skill of the logistic/prior baselines and the CNN (07_baselines.py)."""
+    from .baselines import plot_summary
+    return plot_summary(stacked, out_png=None)
+
+
+# =============================================================================
+# Figures S4–S7 — model performance
+# =============================================================================
+
+def fig_s4(y_true, y_score) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(7, 4.2))
     perf.pr_curve(ax, y_true, y_score)
     return fig
 
 
-def fig_s4(y_true: Dict, y_score: Dict, threshold: float) -> plt.Figure:
+def fig_s5(y_true: Dict, y_score: Dict, threshold: float) -> plt.Figure:
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     for ax, part, lab in zip(axes, ("train", "test"), "ab"):
         perf.confusion_panel(ax, y_true[part], y_score[part], threshold, f"({lab})")
     return fig
 
 
-def fig_s5(values: Dict[str, np.ndarray]) -> plt.Figure:
+def fig_s6(values: Dict[str, np.ndarray]) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(8, 4.5))
     perf.metric_strip(ax, values)
     return fig
 
 
-def fig_s6(y_true, y_pred, years, member_labels) -> plt.Figure:
+def fig_s7(y_true, y_pred, years, member_labels) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(9, 5))
     perf.member_timeline(ax, y_true, y_pred, years, member_labels)
     return fig
@@ -286,10 +297,10 @@ def fig_learning_curve(history: Dict) -> plt.Figure:
 
 
 # =============================================================================
-# Figure S12 — SIE vs GMT slowdowns
+# Figure S13 — SIE vs GMT slowdowns
 # =============================================================================
 
-def fig_s12(years, sie_count, gmt_count, both_count) -> plt.Figure:
+def fig_s13(years, sie_count, gmt_count, both_count) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(10, 4.5))
     sd.sie_gmt_counts(ax, years, sie_count, gmt_count, both_count)
     return fig

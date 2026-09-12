@@ -247,6 +247,8 @@ Every manuscript figure has exactly one implementation, in three layers:
    statistics come from a single streaming pass over splits × seeds),
    calls the `paper` function, saves to `FIGURES_DIR/paper/`.
 
+All axes are drawn without grid lines (`style.tidy`).
+
 Statistics the figures depend on live in `src/analysis`:
 `composites.py` (outcome masks, streaming SST/LRP composites, 97th-pct
 normalisation, smoothing, regional means) and `phase_stats.py`
@@ -254,25 +256,30 @@ normalisation, smoothing, regional means) and `phase_stats.py`
 
 ```bash
 python scripts/make_figure.py --list
-python scripts/make_figure.py all                          # every figure, original labels
-python scripts/make_figure.py S1 S2 --labels relative      # relative-label versions
-python scripts/make_figure.py 2 S7 S8 S9 S10 regional      # composites share one data pass
-python scripts/make_figure.py S3 S4 S6 --split 3 --seed 1  # single-model figures
+python scripts/make_figure.py all                          # every figure, relative labels (default)
+python scripts/make_figure.py S1 S2 --labels original --suffix _orig
+python scripts/make_figure.py 2 S8 S9 S10 S11 regional     # composites share one data pass
+python scripts/make_figure.py S4 S5 S7 --split 3 --seed 1  # single-model figures
 python scripts/make_figure.py 4 --forced-method linear --single-model
 python scripts/make_figure.py 1 --schematic /path/to/cnn_schematic.png --fmt pdf
 ```
 
 | id | figure | id | figure |
 |----|--------|----|--------|
-| `1` | schematic + NSIDC + member | `S6` | test-member timeline |
-| `2` | TP composite: SST + LRP | `S7` | SST composites, all vs CNN-filtered |
-| `3` | P(TP \| phase), test | `S8` `S9` `S10` | FP / TN / FN composites |
-| `4` | observations: votes + indices | `S11` | P(event \| phase), train, all vs TP |
-| `S1` | slowdown definition | `S12` | SIE vs GMT slowdown counts |
+| `1` | schematic + NSIDC + member | `S7` | test-member timeline |
+| `2` | TP composite: SST + LRP | `S8` | SST composites, all vs CNN-filtered |
+| `3` | P(TP \| phase), test | `S9` `S10` `S11` | FP / TN / FN composites |
+| `4` | observations: votes + indices | `S12` | P(event \| phase), train, all vs TP |
+| `S1` | slowdown definition | `S13` | SIE vs GMT slowdown counts |
 | `S2` | label distributions | `phase_all` | P(slowdown \| phase), all slowdowns |
-| `S3` | PR curve | `regional` | relevance with region boxes + bars |
-| `S4` | confusion matrices | `sie_gmt_joint` | joint PDF of GMT and SIE trends |
-| `S5` | metric strip | `learning_curve` | loss vs epoch |
+| `S3` | baselines vs CNN skill (needs `07_baselines.py`) | `regional` | relevance with region boxes + bars |
+| `S4` | PR curve | `sie_gmt_joint` | joint PDF of GMT and SIE trends |
+| `S5` | confusion matrices | `learning_curve` | loss vs epoch |
+| `S6` | metric strip | | |
+
+Labels default to the relative (epoch-free) definition; `--labels original`
+selects the Labe & Barnes-style labels, and `--suffix _orig` keeps the two
+sets of files apart. Output names are always `fig_<id>.<fmt>`.
 
 The notebooks in `figures/` are thin wrappers that import `Data` and
 `FIGURES` from `scripts/make_figure.py` and display the same figures

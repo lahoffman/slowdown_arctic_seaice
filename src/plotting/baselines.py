@@ -13,8 +13,8 @@ from . import style as st
 from .style import plt
 
 
-def plot_summary(stacked, out_png: Path) -> None:
-    """Strip plot of per-split test skill for every model."""
+def plot_summary(stacked, out_png=None):
+    """Strip plot of per-split test skill for every model; saves if ``out_png`` given, else returns fig."""
     metrics = ["F1", "AUPRC", "AUROC"]
     models = [m for m in stacked.model.values if not m.startswith("cnn_run")]
     order = [m for m in BASELINE_FEATURES if m in models] + \
@@ -34,7 +34,9 @@ def plot_summary(stacked, out_png: Path) -> None:
         ax.set_yticks(range(len(order)))
         ax.set_yticklabels(order, fontsize=9)
         ax.set_xlabel(met + " (test)")
-        st.tidy(ax, grid_axis="x")
+        st.tidy(ax)
     axes[0].invert_yaxis()
     fig.suptitle("Baselines vs CNN — per-split test skill (bar = median across 9 splits)", fontsize=11)
+    if out_png is None:
+        return fig
     st.save(fig, out_png)
