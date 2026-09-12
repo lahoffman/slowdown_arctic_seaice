@@ -4,7 +4,7 @@ The full analysis pipeline, step by step. Every step assumes the environment is
 installed and `SLOWDOWN_DATA_ROOT` is set (see [`setup.md`](setup.md)). Run
 scripts from the repo root.
 
-Scripts are numbered by **dependency stage** (`01_` → `06_`), not as a strict
+Scripts are numbered by **dependency stage** (`01_` → `07_`), not as a strict
 linear order — several scripts within a stage are independent and can run in any
 order or in parallel. All outputs are written under `SLOWDOWN_DATA_ROOT`; exact
 paths are defined in `configs/paths.py`.
@@ -177,6 +177,27 @@ ERSST script uses the default 0.5 sigmoid threshold.
 **Depends on:** `04_cesm2le_cnn_train.py`, plus `03_cesm2le_tvt_splits.py`
 (CESM2-LE) or `03_ersst_test.py` (ERSST).
 
+## Stage 07 — Scalar baselines (revision plan §1.1)
+
+```bash
+python scripts/07_baselines.py                 # all baselines + cached CNN + figure
+python scripts/07_baselines.py --no-cnn --no-fig --n-boot 200
+```
+
+Fits reference and logistic-regression baselines on the training members of
+each of the 9 TVT splits and scores them on the test members, using the same
+block assignment as the CNN: always-positive, random-at-prevalence, onset-year
+climatology, September SIE anomaly at onset, the Arctic SST / Niño3.4 / IPO
+indices, and their combinations. If cached CNN predictions exist
+(`results/predictions/cesm2le/`) they are scored with the same metric code so
+the comparison is like for like. Writes per-split and stacked NetCDFs, a
+markdown summary table and logistic coefficients to `results/baselines/`, and
+`results/figures/baselines_skill.png`. No TensorFlow required.
+
+**Depends on:** `02_cesm2le_slowdowns.py`, `02_cesm2le_climate_indices.py`,
+`01_cesm2le_preprocessing.py` (SIE metrics); optionally
+`06_cnn_predict_cesm2le.py`.
+
 ## Figures
 
 The paper figures are built from the cached outputs in `figures/` notebooks —
@@ -189,6 +210,7 @@ no retraining required:
 | `F2-3_FS8-S9_composite_pdf.ipynb` | Slowdown probability by ENSO/IPO/Arctic-SST phase |
 | `F4_predict_obs.ipynb` | Predictions on observed (ERSSTv5) SST |
 | `FS10_sie_gmt.ipynb` | SIE vs GMT slowdown comparison |
+| `results/baselines/baselines_summary.md` | Baseline skill table (Stage 07) |
 
 ## Example end-to-end run
 
@@ -218,6 +240,7 @@ python scripts/04_cesm2le_cnn_train.py
 python scripts/05_cesm2le_lrp.py          # separate process from training
 python scripts/06_cnn_predict_cesm2le.py
 python scripts/06_cnn_predict_ersst.py
+python scripts/07_baselines.py             # scalar baselines vs CNN
 
 # Figures: run the notebooks in figures/
 ```
