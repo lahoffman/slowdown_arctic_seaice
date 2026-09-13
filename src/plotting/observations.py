@@ -80,8 +80,8 @@ def plot_product_comparison(c: dict, lat, lon, out_png, landmask=None) -> None:
     """ERSST vs OISST on the CESM2 grid: Arctic JJA series, climatology and trend difference maps, coverage."""
     from . import maps
     na, nb = c["names"]; yrs = c["years"]
-    fig = plt.figure(figsize=(14, 11))
-    gs = fig.add_gridspec(3, 2, height_ratios=[1, 1.4, 1])
+    fig = plt.figure(figsize=(14, 9.5))
+    gs = fig.add_gridspec(3, 2, height_ratios=[1, 0.8, 1], hspace=0.45)
     ax = fig.add_subplot(gs[0, :])
     ax.plot(yrs, c["arctic_a"], color=st.C_ORIG, lw=2, label=na)
     ax.plot(yrs, c["arctic_b"], color=st.C_ALL, lw=2, label=nb)
@@ -114,4 +114,45 @@ def plot_product_comparison(c: dict, lat, lon, out_png, landmask=None) -> None:
     ax.set_ylim(0, 1.05); ax.set_xlim(yrs[0], yrs[-1]); ax.set_xlabel("year"); ax.set_ylabel("fraction")
     ax.legend(frameon=False, loc="lower left"); st.tidy(ax)
     ax.set_title("(d) coverage north of 65°N and what sits under the ice", loc="left", weight="bold")
+    st.save(fig, out_png)
+
+
+def plot_regrid_check(native: dict, regridded: dict, out_png, landmask=None) -> None:
+    """
+    Native 0.25° OISST vs its CESM2-grid block average for one month.
+    native / regridded: dict(sst, ice, lat, lon, label).  Panels: (a,b) global SST
+    on each grid, (c,d) Arctic ice fraction on each grid, (e) zonal-mean SST and
+    ice of both — the two curves should lie on top of each other.
+    """
+    from . import maps
+    fig = plt.figure(figsize=(15, 11))
+    gs = fig.add_gridspec(3, 2, height_ratios=[1.2, 1, 0.9])
+    vmin, vmax = -2, 32
+    for k, d in enumerate((native, regridded)):
+        ax = maps.map_axes(fig, gs[0, k])
+        sst = d["sst"]
+        if k == 1 and landmask is not None:
+            sst = np.where(landmask == 1, np.nan, sst)
+        maps.global_map(ax, d["lon"], d["lat"], sst, "viridis", vmin, vmax, "SST [°C]", cbar=(k == 1))
+        ax.set_title(f"({'ab'[k]}) SST, {d['label']}", loc="left", weight="bold")
+        ax = maps.map_axes(fig, gs[1, k])
+        maps.global_map(ax, d["lon"], d["lat"], d["ice"], "Blues", 0, 1, "ice fraction", cbar=(k == 1))
+        if maps.HAS_CARTOPY:
+            try:
+                ax.set_extent([-180, 180, 50, 90], crs=maps.ccrs.PlateCarree())
+            except Exception:  # pragma: no cover
+                pass
+        else:
+            ax.set_ylim(50, 90)
+        ax.set_title(f"({'cd'[k]}) ice fraction north of 50°N, {d['label']}", loc="left", weight="bold")
+    ax = fig.add_subplot(gs[2, 0])
+    for d, c, lw in ((native, st.MUTED, 3), (regridded, st.C_ALL, 1.4)):
+        ax.plot(d["lat"], np.nanmean(d["sst"], axis=1), color=c, lw=lw, label=d["label"])
+    ax.set_xlabel("latitude"); ax.set_ylabel("zonal-mean SST [°C]"); ax.legend(frameon=False); st.tidy(ax)
+    ax.set_title("(e) zonal means, SST", loc="left", weight="bold")
+    ax = fig.add_subplot(gs[2, 1])
+    for d, c, lw in ((native, st.MUTED, 3), (regridded, st.C_ALL, 1.4)):
+        ax.plot(d["lat"], np.nanmean(d["ice"], axis=1), color=c, lw=lw, label=d["label"])
+    ax.set_xlim(50, 90); ax.set_xlabel("latitude"); ax.set_ylabel("zonal-mean ice fraction"); ax.legend(frameon=False); st.tidy(ax)
+    ax.set_title("(f) zonal means, ice (north of 50°N)", loc="left", weight="bold")
     st.save(fig, out_png)

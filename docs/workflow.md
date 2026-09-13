@@ -222,6 +222,15 @@ SST, after stripping the output activation. Saves one NetCDF per split × seed
 
 ```bash
 python scripts/06_cnn_predict_cesm2le.py [--tag rel_aux]
+```
+
+### Retrained configurations on observations, occlusion, LRP (one driver)
+
+```bash
+scripts/run_postprocess.sh [tags]          # per tag: 08_occlusion → 03_obs_test + 06_cnn_predict_obs (products × forced refs) → 05 LRP
+python scripts/03_obs_test.py --product oisst --forced-method group_smbb --tag rel_aux   # single obs input
+python scripts/06_cnn_predict_obs.py --product oisst --forced-method group_smbb --tag rel_aux
+python scripts/08_occlusion.py --tag rel_aux
 python scripts/06_cnn_predict_ersst.py
 python scripts/06_cnn_predict_ersst.py --forced-method ensmean linear
 ```

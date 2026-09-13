@@ -123,6 +123,21 @@ def oisst_testing_file(forced_method: str = 'ensmean') -> Path:
     return OISST_DIR / f'oisst_testing_forced_{forced_method}.nc'
 
 
+# Observational inputs / predictions for the retrained (tagged) configurations
+OBS_PRODUCTS = {'ersst': ERSST_REGRIDDED, 'oisst': OISST_REGRIDDED}
+
+
+def obs_input_file(product: str, forced_method: str, tag: Optional[str]) -> Path:
+    """Unstandardised observational CNN input for a product / forced method / configuration tag."""
+    base = {'ersst': ERSST_DIR, 'oisst': OISST_DIR}[product]
+    return base / f'{product}_input_forced_{forced_method}_{tag or "orig"}.nc'
+
+
+def obs_predictions_dir(product: str, forced_method: str, tag: Optional[str]) -> Path:
+    """CNN predictions on observations: results/predictions/<product>/forced_<method>[/<tag>]."""
+    return _tagged(RESULTS_DIR / 'predictions' / product / f'forced_{forced_method}', tag)
+
+
 # =============================================================================
 # CESM2-LE  —  model ensemble
 # =============================================================================

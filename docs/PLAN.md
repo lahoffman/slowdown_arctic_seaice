@@ -14,7 +14,7 @@ Status: `[x]` done · `[~]` in progress / partly done · `[ ]` to do · `[-]` dr
 - [~] 1.4 Train `base`, `aux` (headline), `lag1` — 9 splits × 5 seeds each. Driver: `scripts/run_retrain.sh [--smoke] [tags]` (04 → 06 → 07 per tag, resumable with `--skip-existing`, logs in `results/logs/retrain_<tag>_<stamp>.log`). *Smoke test passes on synthetic data; full run queued on profx.*
 - [~] 1.5 Predict + `07_baselines.py --cnn-tag <config> --demean group` for each (done by `run_retrain.sh`); then `make_figure.py S5 --baselines-tag <tag>` and compare on the Fig. S5 axes. Bar to clear: `logit_sie_pacific` (AUROC ≈ 0.79).
 - [~] 1.6 Under-ice SST (Zach): `openwater` variant of `aux` — code done (`02_cesm2le_icemask.py` → `03 --openwater --tag rel_openwater` → `run_retrain.sh rel_openwater`); Arctic occlusion test (5.3) and the ERSST/OISST under-ice note still to do.
-- [ ] 1.7 LRP on retrained models; TP composites (Fig. 2) and occlusion on the same models.
+- [~] 1.7 LRP on retrained models (`run_postprocess.sh` → `05 --tag`, queued behind training); TP composites (Fig. 2) and occlusion on the same models.
 - [ ] 1.8 Decision gate → Branch A (pattern skill beyond ice state) or Branch B (methodological paper). Phase 6/7 rewrite waits for this.
 
 ## Phase 2 — Skill reporting
@@ -42,14 +42,14 @@ Status: `[x]` done · `[~]` in progress / partly done · `[ ]` to do · `[-]` dr
 
 - [ ] 5.1 Report P(slowdown | phase) for *all* slowdowns in the main text (abstract claims must use these numbers, not TP-only).
 - [ ] 5.2 Define VE in the main text; fix `(ref)` in Text S5; tone down "strongly".
-- [ ] 5.3 XAI robustness: second attribution method, region occlusion test, randomised-weights / shuffled-labels sanity check.
+- [~] 5.3 XAI robustness: region occlusion test coded (`08_occlusion.py` → `results/occlusion/<tag>/occlusion_summary.md`; Arctic, North Pacific, tropical Pacific, North Atlantic, not-Arctic), runs in `run_postprocess.sh`; second attribution method and shuffled-labels check still to do.
 - [ ] 5.4 Reconcile Key Points 2 and 3; drop or hedge the CP-El Niño narrative unless occlusion supports it.
 
 ## Phase 6 — Observations
 
 - [ ] 6.1 Forced-signal removal comparison (linear vs ensmean vs quadratic) and choice of forced reference for ERSST now that the CNN is trained on group-demeaned SST (either group or 100-member mean; ≤0.1 °C in the Arctic); Arctic SST index 2010–2025 under each. *Branch-independent.*
 - [~] 6.2 OISST v2.1 as second SST product: download + monthly means + block-average regrid (`01_oisst_preprocessing.py`) and ERSST-vs-OISST comparison (`02_obs_compare_products.py` → `diagnostics/obs_products_compare.png`) coded; *to do:* run on profx, then Arctic SST index + `03_ersst_test.py`/`06_cnn_predict_ersst.py` generalised to `--product oisst` once the retrained CNN exists.
-- [ ] 6.3 Recount vote fractions 2016–2025 and fix the text ("fewer than 20% … 2017–2025" ≠ Fig. 4b); extend observed labels to onset 2016.
+- [~] 6.3 Observational predictions for every configuration × product (ERSST, OISST) × forced reference (ensmean, group_smbb, group_cmip6, linear): `03_obs_test.py` + `06_cnn_predict_obs.py`, run by `run_postprocess.sh`. Then recount vote fractions 2016–2025 and fix the text; extend observed labels to onset 2016.
 - [~] 6.4 Fig. 4: single-CNN panel removed by default (`--single-model` to add back); add bootstrap uncertainty and event-level hits.
 - [ ] 6.5 Model–observation sign discrepancy (IPO/ENSO phase) as an explicit caveat paragraph.
 - [ ] 6.6 Rewrite Conclusions per Branch A or B; split into Discussion + short Conclusions.
