@@ -12,7 +12,7 @@ Usage:
   python scripts/make_figure.py 4 --forced-method ensmean
   python scripts/make_figure.py all --fmt pdf
 
-Figure ids: 1 2 3 4 S1 … S15, S17 S18 S19 plus extras phase_all, regional, sie_gmt_joint, learning_curve.
+Figure ids: 1 2 3 4 S1 … S15, S17 S18 S19 plus extras phase_all, regional, sie_gmt_joint, learning_curve, learning_curves.
 """
 
 import argparse
@@ -176,6 +176,14 @@ class Data:
             return dict(y_true={"train": sp["slow_tr"], "val": sp["slow_va"], "test": sp["slow_te"]},
                         y_score=score, threshold=thr, history=hist)
         return self.get("single", _load)
+
+    def histories(self):
+        """Training histories of every saved model for this tag."""
+        d = paths.LOGS_DIR / self.tag if self.tag else paths.LOGS_DIR
+        files = sorted(d.glob("history_split*_run*.json"))
+        if not files:
+            raise FileNotFoundError(f"no history_split*_run*.json in {d}")
+        return self.get("histories", lambda: [json.load(open(f)) for f in files])
 
     # -- metrics for all splits (S6) --------------------------------------------
     def metrics(self):
@@ -383,6 +391,7 @@ FIGURES = {
     "regional":       (build_regional, "TP composite with region boxes + regional relevance"),
     "sie_gmt_joint":  (lambda d: paper.fig_sie_gmt_joint(d.sie_gmt()["gmt_tr"], d.sie_gmt()["sie_tr"]), "joint PDF of GMT and SIE trends"),
     "learning_curve": (lambda d: paper.fig_learning_curve(d.single()["history"]), "loss vs epoch, one CNN"),
+    "learning_curves": (lambda d: paper.fig_learning_curves(d.histories()), "loss vs epoch, all 45 CNNs of a tag"),
 }
 
 

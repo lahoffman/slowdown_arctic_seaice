@@ -21,6 +21,20 @@ def learning_curve(ax, history: Dict[str, Sequence[float]]) -> None:
     st.tidy(ax)
 
 
+def learning_curves_all(ax, histories, key: str = "loss") -> None:
+    """All runs' train (solid) and val (dashed) ``key`` vs epoch, thin, with the median in bold."""
+    for h in histories:
+        ep = np.arange(1, len(h[key]) + 1)
+        ax.plot(ep, h[key], color=st.BLUE, lw=0.6, alpha=0.25)
+        ax.plot(ep, h["val_" + key], color=st.C_ORIG, lw=0.6, alpha=0.25, ls="--")
+    n = max(len(h[key]) for h in histories)
+    for k, c, ls, lab in ((key, st.BLUE, "-", "train"), ("val_" + key, st.C_ORIG, "--", "validation")):
+        med = [np.median([h[k][e] for h in histories if len(h[k]) > e]) for e in range(n)]
+        ax.plot(np.arange(1, n + 1), med, color=c, lw=2.4, ls=ls, label=f"{lab} (median of {len(histories)})")
+    ax.set_xlabel("epoch"); ax.set_ylabel(key); ax.legend(frameon=False)
+    st.tidy(ax)
+
+
 def pr_curve(ax, y_true, y_score) -> float:
     """Precision, recall and F1 vs threshold; returns the selected threshold."""
     p, r, t = precision_recall_curve(y_true, y_score)

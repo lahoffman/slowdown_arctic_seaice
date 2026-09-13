@@ -23,7 +23,7 @@ Main text                               Supplement
                                           fig_s17 label-definition sensitivity (baselines)
                                           fig_s18 ERSST vs OISST on the CESM2 grid
                                           fig_s19 observed Arctic index vs forced reference
-Extras: fig_phase_all, fig_regional_relevance, fig_sie_gmt_joint, fig_learning_curve.
+Extras: fig_phase_all, fig_regional_relevance, fig_sie_gmt_joint, fig_learning_curve, fig_learning_curves.
 """
 
 from __future__ import annotations
@@ -354,6 +354,18 @@ def fig_s9(y_true, y_pred, years, member_labels) -> plt.Figure:
 def fig_learning_curve(history: Dict) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(6.5, 3.8))
     perf.learning_curve(ax, history)
+    return fig
+
+
+def fig_learning_curves(histories: Sequence[Dict]) -> plt.Figure:
+    """(a) loss vs epoch for every split × seed; (b) histogram of the epoch training stopped at."""
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4), gridspec_kw={"width_ratios": [2, 1]})
+    perf.learning_curves_all(axes[0], histories)
+    axes[0].set_title("(a) focal loss, all models", loc="left", weight="bold")
+    n_ep = [len(h["loss"]) for h in histories]
+    axes[1].hist(n_ep, bins=np.arange(0.5, max(n_ep) + 1.5), color=st.C_ALL, edgecolor="white")
+    axes[1].set_xlabel("epochs trained"); axes[1].set_ylabel("models")
+    axes[1].set_title("(b) stopping epoch", loc="left", weight="bold"); st.tidy(axes[1])
     return fig
 
 
