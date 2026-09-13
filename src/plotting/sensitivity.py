@@ -10,25 +10,33 @@ from .style import plt
 
 
 def plot_sweep(ds: xr.Dataset, models, out_png, metric: str = "AUROC") -> None:
-    """One heat-map (window × σ) per model, plus prevalence; annotated with the median value."""
+    """Heat-maps (window × σ): prevalence, then test ``metric`` per model (median over splits), 2 × 2 grid."""
     med = ds["value"].median("split")
     panels = [("prevalence", ds["prevalence"].mean("split"), "Greys", (0, 0.4))] + \
-             [(m.replace("logit_", ""), med.sel(metric=metric, model=m), "viridis", (0.5, 0.85)) for m in models]
-    fig, axes = plt.subplots(1, len(panels), figsize=(3.6 * len(panels), 3.8))
+             [(f"{metric}, {m.replace('logit_', '')}", med.sel(metric=metric, model=m), "viridis", (0.5, 0.85))
+              for m in models]
+    ncol = 2; nrow = int(np.ceil(len(panels) / ncol))
+    fig, axes = plt.subplots(nrow, ncol, figsize=(4.6 * ncol, 4.0 * nrow), squeeze=False)
+    axes = axes.ravel()
     W, S = ds["window"].values, ds["n_sigma"].values
-    for ax, (title, arr, cmap, (v0, v1)) in zip(axes, panels):
+    for k, (ax, (title, arr, cmap, (v0, v1))) in enumerate(zip(axes, panels)):
         grid = arr.transpose("window", "n_sigma").values
-        im = ax.imshow(grid, origin="lower", cmap=cmap, vmin=v0, vmax=v1, aspect="auto")
+        ax.imshow(grid, origin="lower", cmap=cmap, vmin=v0, vmax=v1, aspect="auto")
         for i in range(len(W)):
             for j in range(len(S)):
                 ax.text(j, i, f"{grid[i, j]:.2f}", ha="center", va="center",
-                        color="white" if (grid[i, j] - v0) / (v1 - v0) < 0.55 else "black", fontsize=10)
+                        color="white" if (grid[i, j] - v0) / (v1 - v0) < 0.55 else "black")
         ax.set_xticks(range(len(S))); ax.set_xticklabels([f"{s:g}σ" for s in S])
         ax.set_yticks(range(len(W))); ax.set_yticklabels([f"{w} yr" for w in W])
-        ax.set_title(title, loc="left", weight="bold"); ax.set_xlabel("threshold")
+        ax.set_title(f"({'abcdefgh'[k]}) {title}", loc="left", weight="bold")
         ax.tick_params(length=0)
-    axes[0].set_ylabel("trend window")
-    fig.suptitle(f"label sensitivity — test {metric} of the scalar baselines (median over 9 splits), onsets 1990–2030")
+        if k % ncol == 0:
+            ax.set_ylabel("trend window")
+        if k >= len(panels) - ncol:
+            ax.set_xlabel("threshold")
+    for ax in axes[len(panels):]:
+        ax.axis("off")
+    fig.tight_layout()
     if out_png is None:
         return fig
     st.save(fig, out_png)
