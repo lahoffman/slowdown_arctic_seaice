@@ -20,6 +20,9 @@ Main text                               Supplement
                                           fig_s11/s12/s13  FP / TN / FN composites
                                           fig_s14 P(event | phase), train, all vs TP
                                           fig_s15 SIE vs GMT slowdown counts
+                                          fig_s17 label-definition sensitivity (baselines)
+                                          fig_s18 ERSST vs OISST on the CESM2 grid
+                                          fig_s19 observed Arctic index vs forced reference
 Extras: fig_phase_all, fig_regional_relevance, fig_sie_gmt_joint, fig_learning_curve.
 """
 
@@ -369,3 +372,25 @@ def fig_sie_gmt_joint(gmt_tr, sie_tr) -> plt.Figure:
     sd.joint_trend_pdf(ax, gmt_tr, sie_tr)
     st.tidy(ax)
     return fig
+
+
+# =============================================================================
+# Figures S17–S19 — revision additions (numbered provisionally; see manuscript macros)
+# =============================================================================
+
+def fig_s17(sweep_ds: xr.Dataset, models: Sequence[str]) -> plt.Figure:
+    """Label-definition sensitivity heat-maps (09_sensitivity_sweep.py output)."""
+    from .sensitivity import plot_sweep
+    return plot_sweep(sweep_ds, list(models), out_png=None)
+
+
+def fig_s18(cmp: Dict, lat, lon, landmask=None) -> plt.Figure:
+    """ERSST vs OISST comparison (src.analysis.obs_products.compare_jja output)."""
+    from .observations import plot_product_comparison
+    return plot_product_comparison(cmp, lat, lon, out_png=None, landmask=landmask)
+
+
+def fig_s19(prods: Dict, series: Dict, forced_arctic: Dict, years, methods, claim) -> plt.Figure:
+    """Observed Arctic index under each forced reference (09_obs_forced_removal.py logic)."""
+    from .observations import plot_forced_removal
+    return plot_forced_removal(prods, series, forced_arctic, years, methods, claim, out_png=None)

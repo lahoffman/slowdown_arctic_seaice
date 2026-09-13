@@ -26,16 +26,16 @@ Status: `[x]` done · `[~]` in progress / partly done · `[ ]` to do · `[-]` dr
 
 ## Phase 3 — Autocorrelation and effective sample size
 
-- [~] 3.1 Count independent events (merge consecutive positive years per member): `09_event_stats.py` → `results/events/event_summary.md`; report in Methods / Fig. S4 once run.
+- [x] 3.1 Independent events (`09_event_stats.py`): 702 positive member-years = 239 events, mean 2.9 yr, onsets flat 1990–2030 (v1 labels: 1417 → 364, 3.9 yr). *To write into Methods / Fig. S4 caption (7.7).*
 - [ ] 3.2 Member-block bootstrap for every CI (Fig. 3 / S14 VE brackets, metric spread); baselines already do this.
-- [~] 3.3 Event-level hit rate / false-alarm ratio alongside sample-level F1: `09_event_stats.py --tag <tag>`; use for the observational evaluation.
+- [~] 3.3 Event-level skill (`09_event_stats.py --tag`): `rel_base` hit rate 0.62 (0.33–0.76), false-alarm ratio 0.61, vs sample F1 0.38. Rerun for the other tags; use for the observational evaluation.
 
 ## Phase 4 — Slowdown definition
 
 - [-] 4.1 Ice-free floor screening — superseded by the relative definition (1.2).
-- [~] 4.2 Sensitivity sweep (windows 8/10/12/15 yr × 0.5/1/1.5σ) with the logistic baselines only: `09_sensitivity_sweep.py` → `results/sensitivity/sweep_summary.md`, `diagnostics/sensitivity_sweep.png`; SST-season variant still to do.
+- [x] 4.2 Sensitivity sweep (windows 8/10/12/15 yr × 0.5/1/1.5σ, baselines only; `09_sensitivity_sweep.py`). *Result: ice state > indices by 0.05–0.09 AUROC and Pacific adds +0.01–0.03 in every cell; skill rises with threshold, not window; our 10 yr/1σ cell has the largest Pacific increment (+0.033 vs grid median +0.014) — say so.* SI heat-map = `diagnostics/sensitivity_sweep.png`. SST-season variant → optional.
 - [x] 4.3 Explain in §2.3 why the LB22 scaling is not used (tracked change in manuscript).
-- [~] 4.4 Biomass-burning forcing: labels and SST demeaned per forcing group (1.2/1.3, Fig. S3); per-group skill check `09_baselines_by_group.py --cnn-tag <tag>` → `by_group_summary.md` (closes the item if CMIP6-BB ≈ SMBB); last50-only CNN → optional.
+- [x] 4.4 Biomass-burning forcing: labels and SST demeaned per forcing group (1.2/1.3, Fig. S3). Per-group check (`09_baselines_by_group.py`): SMBB members more predictable than CMIP6-BB by ≈0.05 AUROC for the scalar regression *and* the CNN alike — a physical difference, not a group shortcut. last50-only CNN → optional.
 - [-] 4.5 Threshold degeneracy guard — superseded by the relative definition.
 
 ## Phase 5 — Conditioning and XAI
@@ -47,7 +47,7 @@ Status: `[x]` done · `[~]` in progress / partly done · `[ ]` to do · `[-]` dr
 
 ## Phase 6 — Observations
 
-- [~] 6.1 Forced-signal removal comparison on the observed Arctic index — linear / quadratic / ensmean / group_cmip6 / group_smbb × ERSST / OISST: `09_obs_forced_removal.py` → `results/obs_forced/summary.md` (sign of the 2016–2025 anomaly per combination), `diagnostics/obs_forced_removal.png`. Decision on the reference pending the run. *Branch-independent.*
+- [x] 6.1 Forced-signal removal on the observed Arctic index (`09_obs_forced_removal.py`, 5 references × 2 products). *Result: 2016–2025 Arctic anomaly ≈ 0 or negative in every combination (ERSST −0.04…+0.06 °C, OISST −0.08…+0.02), 2010–2015 positive in all; product and method spreads both ≈0.1 °C.* Decision: `group_cmip6` as primary reference for observations (CMIP6 BB emissions are the observation-based ones; CNN trained on group-demeaned SST), ensmean / group_smbb reported as range. Write into §2.2 and the Fig. 4 caption (7.7).
 - [~] 6.2 OISST v2.1 as second SST product: download + monthly means + block-average regrid (`01_oisst_preprocessing.py`) and ERSST-vs-OISST comparison (`02_obs_compare_products.py` → `diagnostics/obs_products_compare.png`) coded; *to do:* run on profx, then Arctic SST index + `03_ersst_test.py`/`06_cnn_predict_ersst.py` generalised to `--product oisst` once the retrained CNN exists.
 - [~] 6.3 Observational predictions for every configuration × product (ERSST, OISST) × forced reference (ensmean, group_smbb, group_cmip6, linear): `03_obs_test.py` + `06_cnn_predict_obs.py`, run by `run_postprocess.sh`. Then recount vote fractions 2016–2025 and fix the text; extend observed labels to onset 2016.
 - [~] 6.4 Fig. 4: single-CNN panel removed by default (`--single-model` to add back); add bootstrap uncertainty and event-level hits.
@@ -62,10 +62,10 @@ Status: `[x]` done · `[~]` in progress / partly done · `[ ]` to do · `[-]` dr
 - [ ] 7.3 Intro: 1–2 sentences on proposed drivers of the observed slowdown (Zach's three DOIs).
 - [ ] 7.4 SI: Text S-numbering and cross-references; Fig. S16 caption/panels (e,f) and Niño 3.4 phase composites; "CESMS2-LE".
 - [ ] 7.5 Repo: delete or sync stale `configs/model.py` / `configs/training.py` (and fix `configs/__init__.py`); remove `figures/legacy/`, `_to_delete/`, `PROJECT_STRUCTURE.md` when ready.
-- [ ] 7.7 Tracked changes for 1.2/1.3: §2.1 (group demeaning), §2.3 (pooled σ, onsets ≤ 2030, all windows roll off), SI captions for Figs S2/S3, renumber S4–S16 in both `.tex` files and `sync_figures.sh`.
+- [~] 7.7 Tracked changes: done — §2.1 (group demeaning), §2.3 (pooled σ, onsets ≤ 2030, 239 events), §2.2 (OISST primary, group_cmip6 reference, ERSST check; Huang20/Banzon16/Reynolds07), §3.1 sensitivity sentence, SI captions S2/S3/S4 and new S17–S19 (provisional numbers via `\figsweep` `\figproducts` `\figforced` macros), S4–S16 renumbered. *Remaining:* §3.1 `0.XX` from `rel_aux`; final SI renumbering pass at the end of Phase 1.
 - [ ] 7.6 Add Zach's affiliation/ORCID; Acknowledgments placeholder for Climate Central; title no longer echoing LB22's key point.
 
-SI numbering (v2): S1 definition · S2 pooled σ/cap · S3 forcing groups · S4 label stats · S5 baselines · S6 PR · S7 confusion · S8 metrics · S9 timeline · S10 composites · S11–S13 FP/TN/FN · S14 P(event|phase) train · S15 SIE vs GMT · S16 obs phase composites.
+SI numbering (v2): S1 definition · S2 pooled σ/cap · S3 forcing groups · S4 label stats · S5 baselines · S6 PR · S7 confusion · S8 metrics · S9 timeline · S10 composites · S11–S13 FP/TN/FN · S14 P(event|phase) train · S15 SIE vs GMT · S16 obs phase composites · S17 label sensitivity · S18 ERSST vs OISST · S19 obs Arctic index vs forced reference (S17–S19 provisional, set by macros in the .tex; final order at end of Phase 1).
 
 ## Optional / future work
 

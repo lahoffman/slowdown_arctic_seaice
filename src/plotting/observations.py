@@ -114,6 +114,8 @@ def plot_product_comparison(c: dict, lat, lon, out_png, landmask=None) -> None:
     ax.set_ylim(0, 1.05); ax.set_xlim(yrs[0], yrs[-1]); ax.set_xlabel("year"); ax.set_ylabel("fraction")
     ax.legend(frameon=False, loc="lower left"); st.tidy(ax)
     ax.set_title("(d) coverage north of 65°N and what sits under the ice", loc="left", weight="bold")
+    if out_png is None:
+        return fig
     st.save(fig, out_png)
 
 
@@ -185,4 +187,6 @@ def plot_forced_removal(prods: dict, series: dict, forced_arctic: dict, years, m
         ax.axhline(0, color=st.MUTED, lw=0.7); ax.axvspan(*claim, color=st.GRID, alpha=0.5, zorder=0)
         ax.set_xlabel("year"); ax.set_ylabel("anomaly [°C]"); ax.legend(frameon=False, fontsize=9, ncol=2)
         ax.set_title(f"({lab}) {n.upper()} anomaly by forced reference", loc="left", weight="bold"); st.tidy(ax)
+    if out_png is None:
+        return fig
     st.save(fig, out_png)

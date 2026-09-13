@@ -12,7 +12,7 @@ Usage:
   python scripts/make_figure.py 4 --forced-method ensmean
   python scripts/make_figure.py all --fmt pdf
 
-Figure ids: 1 2 3 4 S1 … S15 plus extras phase_all, regional, sie_gmt_joint, learning_curve.
+Figure ids: 1 2 3 4 S1 … S15, S17 S18 S19 plus extras phase_all, regional, sie_gmt_joint, learning_curve.
 """
 
 import argparse
@@ -77,6 +77,56 @@ class Data:
         """Original (LB22-style) labels for contrast in S2; None if the file is missing."""
         f = paths.cesm2le_slowdown_file(self.a.variable, self.a.month)
         return self.get("labels_orig", lambda: xr.open_dataset(f).load() if f.exists() else None)
+
+    # -- revision additions: sweep (S17), product comparison (S18), forced removal (S19) --
+    def grid(self):
+        def _load():
+            import netCDF4 as nc
+            with nc.Dataset(paths.CESM2LE_GRID_FILE) as ds:
+                lat, lon = np.array(ds["lat"][:]), np.array(ds["lon"][:])
+            landmask = None
+            if paths.LANDMASK_FILE.exists():
+                with nc.Dataset(paths.LANDMASK_FILE) as ds:
+                    landmask = np.array(ds["landmask"][:])
+            return lat, lon, landmask
+        return self.get("grid", _load)
+
+    def sweep(self):
+        return self.get("sweep", lambda: xr.open_dataset(paths.RESULTS_DIR / "sensitivity" / "sweep.nc").load())
+
+    def products(self):
+        def _load():
+            from src.analysis import obs_products as op
+            lat, lon, landmask = self.grid()
+            e = op.load_product(paths.ERSST_REGRIDDED, "ERSSTv5"); o = op.load_product(paths.OISST_REGRIDDED, "OISST v2.1")
+            return op.compare_jja(e, o, lat, 1990, self.a.obs_end_year, landmask=landmask)
+        return self.get("products", _load)
+
+    def forced_removal(self):
+        def _load():
+            from src.data.observations import obs_input as oi
+            from src.data.observations.ersst.climate_indices import _correct_forced_mean_and_trend
+            from src.plotting.forced import arctic_mean
+            lat, lon, landmask = self.grid()
+            years = np.arange(1990, self.a.obs_end_year + 1)
+            mask = lambda f: np.where(landmask == 1, np.nan, f) if landmask is not None else f
+            forced = {m: arctic_mean(mask(oi.forced_sst_field(m, years, paths.CESM2LE_ENSMEAN_JJA, paths.CESM2LE_GROUPMEAN_JJA)), lat)
+                      for m in ("ensmean", "group_cmip6", "group_smbb")}
+            methods = ["linear", "quadratic", "ensmean", "group_cmip6", "group_smbb"]
+            prods, series = {}, {}
+            for name, path in paths.OBS_PRODUCTS.items():
+                if not path.exists():
+                    continue
+                jja = mask(oi.jja_by_year(oi.load_monthly_product(path), years))
+                ok = ~np.isnan(jja).all(axis=(1, 2)); yrs = years[ok]; obs = arctic_mean(jja[ok], lat)
+                t = yrs - yrs.mean(); prods[name] = (yrs, obs); series[name] = {}
+                for m in methods:
+                    if m in ("linear", "quadratic"):
+                        series[name][m] = obs - np.polyval(np.polyfit(t, obs, 1 if m == "linear" else 2), t)
+                    else:
+                        series[name][m] = _correct_forced_mean_and_trend(obs, forced[m][ok], np.arange(yrs.size, dtype=float))[2]
+            return dict(prods=prods, series=series, forced_arctic=forced, years=years, methods=methods, claim=(2016, 2025))
+        return self.get("forced_removal", _load)
 
     # -- forced response per forcing group (S3; 02_cesm2le_forced.py) -----------
     def forced(self):
@@ -325,6 +375,9 @@ FIGURES = {
     "S12": (build_composite("TN"), "TN composite"),
     "S13": (build_composite("FN"), "FN composite"),
     "S14": (lambda d: paper.fig_s14(d.pass_over_splits()["summaries"]["train"]), "P(event | phase), train, all vs TP"),
+    "S17": (lambda d: paper.fig_s17(d.sweep(), ["logit_sie_anom", "logit_indices", "logit_sie_pacific", "logit_all_scalars"]), "label sensitivity heat-maps (09_sensitivity_sweep.py)"),
+    "S18": (lambda d: paper.fig_s18(d.products(), *d.grid()), "ERSST vs OISST on the CESM2 grid"),
+    "S19": (lambda d: paper.fig_s19(**d.forced_removal()), "observed Arctic index vs forced reference"),
     "S15": (lambda d: paper.fig_s15(*(d.sie_gmt()[k] for k in ("years", "sie_count", "gmt_count", "both_count"))), "SIE vs GMT slowdown counts"),
     "phase_all":      (lambda d: paper.fig_phase_all(d.pass_over_splits()["summaries"]["train"]), "P(slowdown | phase), all slowdowns"),
     "regional":       (build_regional, "TP composite with region boxes + regional relevance"),
@@ -350,6 +403,7 @@ def parse_args(argv=None):
                         "default: original CNN outputs")
     p.add_argument("--member", type=int, default=6, help="highlighted member (Figs 1, S1)")
     p.add_argument("--cap-year", type=int, default=2030, help="onset cap marked in S2")
+    p.add_argument("--obs-end-year", type=int, default=2025, help="last year of observations (S18, S19)")
     p.add_argument("--forced-period", type=int, nargs=2, default=[2000, 2020],
                    help="averaging period for the S3 forced-difference map")
     p.add_argument("--split", type=int, default=0, help="split for single-model figures (S4, S5, S7)")

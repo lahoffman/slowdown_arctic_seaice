@@ -29,6 +29,8 @@ def plot_sweep(ds: xr.Dataset, models, out_png, metric: str = "AUROC") -> None:
         ax.tick_params(length=0)
     axes[0].set_ylabel("trend window")
     fig.suptitle(f"label sensitivity — test {metric} of the scalar baselines (median over 9 splits), onsets 1990–2030")
+    if out_png is None:
+        return fig
     st.save(fig, out_png)
 
 
