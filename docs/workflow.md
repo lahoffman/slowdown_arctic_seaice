@@ -75,6 +75,16 @@ for 1990–2025), saves a monthly mean of `sst` and `ice` per month under
 `oisst/monthly/` and deletes the dailies, then block-averages to the CESM2 grid
 (`oisst/sst_regrid_cesm2le.nc`). Resumable: months already present are skipped.
 
+### Cheap analyses (no CNN needed; stage 09)
+
+```bash
+python scripts/09_sensitivity_sweep.py                   # 4.2 label sensitivity, baselines only
+python scripts/09_baselines_by_group.py --cnn-tag rel_base   # 4.4 skill by forcing group
+python scripts/09_event_stats.py --tag rel_base          # 3.1/3.3 events and event-level skill
+python scripts/09_obs_forced_removal.py                  # 6.1 observed Arctic index vs forced reference × product
+python scripts/02_oisst_regrid_check.py                  # OISST regridding sanity check
+```
+
 ## Stage 02 — Indices, forced response, slowdown labels
 
 ### Climate indices

@@ -156,3 +156,33 @@ def plot_regrid_check(native: dict, regridded: dict, out_png, landmask=None) -> 
     ax.set_xlim(50, 90); ax.set_xlabel("latitude"); ax.set_ylabel("zonal-mean ice fraction"); ax.legend(frameon=False); st.tidy(ax)
     ax.set_title("(f) zonal means, ice (north of 50°N)", loc="left", weight="bold")
     st.save(fig, out_png)
+
+
+def plot_forced_removal(prods: dict, series: dict, forced_arctic: dict, years, methods, claim, out_png) -> None:
+    """
+    (a) raw Arctic JJA SST per product with the model forced references (trend-corrected to ERSST for display);
+    (b, c) residual anomaly per method, one panel per product; claim years shaded.
+    """
+    names = list(series)
+    fig, axes = plt.subplots(1, 1 + len(names), figsize=(6.5 * (1 + len(names)), 4.8), sharey=False)
+    ax = axes[0]
+    pcol = {"ersst": st.C_ORIG, "oisst": st.C_ALL}
+    for n, (yrs, obs) in prods.items():
+        ax.plot(yrs, obs, color=pcol.get(n, st.INK), lw=2, label=n.upper())
+    fcol = {"ensmean": st.INK, "group_cmip6": st.C_CMIP6, "group_smbb": st.C_SMBB}
+    ref_years, ref_obs = prods[names[0]]
+    for m, f in forced_arctic.items():
+        f = f[np.isin(years, ref_years)]
+        ax.plot(ref_years, f - f.mean() + ref_obs.mean(), color=fcol[m], lw=1.2, ls="--", label=f"model {m} (mean-matched)")
+    ax.set_ylabel("Arctic (>65°N) JJA SST [°C]"); ax.set_xlabel("year"); ax.legend(frameon=False, fontsize=9)
+    ax.set_title("(a) observed index and model forced references", loc="left", weight="bold"); st.tidy(ax)
+    mcol = {"linear": st.MUTED, "quadratic": st.PINK, "ensmean": st.INK, "group_cmip6": st.C_CMIP6, "group_smbb": st.C_SMBB}
+    for ax, n, lab in zip(axes[1:], names, "bc"):
+        yrs = prods[n][0]
+        for m in methods:
+            ax.plot(yrs, series[n][m], color=mcol[m], lw=1.6 if m.startswith("group") or m == "ensmean" else 1.1,
+                    ls="-" if m in ("ensmean", "group_cmip6", "group_smbb") else "--", label=m)
+        ax.axhline(0, color=st.MUTED, lw=0.7); ax.axvspan(*claim, color=st.GRID, alpha=0.5, zorder=0)
+        ax.set_xlabel("year"); ax.set_ylabel("anomaly [°C]"); ax.legend(frameon=False, fontsize=9, ncol=2)
+        ax.set_title(f"({lab}) {n.upper()} anomaly by forced reference", loc="left", weight="bold"); st.tidy(ax)
+    st.save(fig, out_png)

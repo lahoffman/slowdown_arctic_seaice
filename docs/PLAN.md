@@ -26,16 +26,16 @@ Status: `[x]` done · `[~]` in progress / partly done · `[ ]` to do · `[-]` dr
 
 ## Phase 3 — Autocorrelation and effective sample size
 
-- [ ] 3.1 Count independent events (merge consecutive positive years per member); report in Methods / Fig. S2.
+- [~] 3.1 Count independent events (merge consecutive positive years per member): `09_event_stats.py` → `results/events/event_summary.md`; report in Methods / Fig. S4 once run.
 - [ ] 3.2 Member-block bootstrap for every CI (Fig. 3 / S14 VE brackets, metric spread); baselines already do this.
-- [ ] 3.3 Event-level hit rate alongside sample-level F1; use for the observational evaluation.
+- [~] 3.3 Event-level hit rate / false-alarm ratio alongside sample-level F1: `09_event_stats.py --tag <tag>`; use for the observational evaluation.
 
 ## Phase 4 — Slowdown definition
 
 - [-] 4.1 Ice-free floor screening — superseded by the relative definition (1.2).
-- [ ] 4.2 Sensitivity sweep (σ threshold, window 8–15 yr, SST season) with the logistic baselines only; SI heat-map.
+- [~] 4.2 Sensitivity sweep (windows 8/10/12/15 yr × 0.5/1/1.5σ) with the logistic baselines only: `09_sensitivity_sweep.py` → `results/sensitivity/sweep_summary.md`, `diagnostics/sensitivity_sweep.png`; SST-season variant still to do.
 - [x] 4.3 Explain in §2.3 why the LB22 scaling is not used (tracked change in manuscript).
-- [x] 4.4 Biomass-burning forcing: labels and SST demeaned per forcing group (1.2/1.3, Fig. S3); last50-only CNN → optional.
+- [~] 4.4 Biomass-burning forcing: labels and SST demeaned per forcing group (1.2/1.3, Fig. S3); per-group skill check `09_baselines_by_group.py --cnn-tag <tag>` → `by_group_summary.md` (closes the item if CMIP6-BB ≈ SMBB); last50-only CNN → optional.
 - [-] 4.5 Threshold degeneracy guard — superseded by the relative definition.
 
 ## Phase 5 — Conditioning and XAI
@@ -47,7 +47,7 @@ Status: `[x]` done · `[~]` in progress / partly done · `[ ]` to do · `[-]` dr
 
 ## Phase 6 — Observations
 
-- [ ] 6.1 Forced-signal removal comparison (linear vs ensmean vs quadratic) and choice of forced reference for ERSST now that the CNN is trained on group-demeaned SST (either group or 100-member mean; ≤0.1 °C in the Arctic); Arctic SST index 2010–2025 under each. *Branch-independent.*
+- [~] 6.1 Forced-signal removal comparison on the observed Arctic index — linear / quadratic / ensmean / group_cmip6 / group_smbb × ERSST / OISST: `09_obs_forced_removal.py` → `results/obs_forced/summary.md` (sign of the 2016–2025 anomaly per combination), `diagnostics/obs_forced_removal.png`. Decision on the reference pending the run. *Branch-independent.*
 - [~] 6.2 OISST v2.1 as second SST product: download + monthly means + block-average regrid (`01_oisst_preprocessing.py`) and ERSST-vs-OISST comparison (`02_obs_compare_products.py` → `diagnostics/obs_products_compare.png`) coded; *to do:* run on profx, then Arctic SST index + `03_ersst_test.py`/`06_cnn_predict_ersst.py` generalised to `--product oisst` once the retrained CNN exists.
 - [~] 6.3 Observational predictions for every configuration × product (ERSST, OISST) × forced reference (ensmean, group_smbb, group_cmip6, linear): `03_obs_test.py` + `06_cnn_predict_obs.py`, run by `run_postprocess.sh`. Then recount vote fractions 2016–2025 and fix the text; extend observed labels to onset 2016.
 - [~] 6.4 Fig. 4: single-CNN panel removed by default (`--single-model` to add back); add bootstrap uncertainty and event-level hits.
