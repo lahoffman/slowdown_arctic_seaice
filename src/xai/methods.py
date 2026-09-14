@@ -69,10 +69,13 @@ def attribute(model_logits, x, method: str, chunk: int = 100, background=None, *
     return np.concatenate(out)
 
 
-def composite(rel: np.ndarray, sel: np.ndarray, normalise: bool = True) -> np.ndarray:
-    """Mean relevance over the selected samples, scaled to max |value| = 1."""
+def composite(rel: np.ndarray, sel: np.ndarray, normalise: bool = True, q: float = 99.0) -> np.ndarray:
+    """Mean relevance over the selected samples; if ``normalise``, scaled so the q-th percentile of |value| = 1 and clipped to ±1."""
     m = np.nanmean(rel[sel], axis=0)
-    return m / np.nanmax(np.abs(m)) if normalise and np.nanmax(np.abs(m)) > 0 else m
+    if not normalise:
+        return m
+    s = np.nanpercentile(np.abs(m[m != 0]), q) if np.any(m != 0) else 0.0
+    return np.clip(m / s, -1, 1) if s > 0 else m
 
 
 def spatial_correlation(maps: Dict[str, np.ndarray], ocean: np.ndarray) -> np.ndarray:
