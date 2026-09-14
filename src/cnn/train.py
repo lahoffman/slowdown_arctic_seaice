@@ -192,6 +192,8 @@ def train_model(
     batch_size   = cfg.get('batch_size',    120)
     optimizer    = cfg.get('optimizer',     'adam')
     patience     = cfg.get('patience',      10)
+    monitor      = cfg.get('monitor',       'val_loss')     # 'val_auprc' for the Phase-8 tags
+    min_epochs   = cfg.get('min_epochs',    0)              # early stopping cannot fire before this
     focal_alpha  = cfg.get('focal_alpha',   0.75)
     focal_gamma  = cfg.get('focal_gamma',   2.0)
 
@@ -201,14 +203,17 @@ def train_model(
             alpha=focal_alpha,
             gamma=focal_gamma,
         ),
-        metrics=['accuracy'],
+        metrics=['accuracy', keras.metrics.AUC(curve='PR', name='auprc')],
     )
 
-    early_stop = EarlyStopping(
-        monitor='val_loss',
-        patience=patience,
-        restore_best_weights=True,
-    )
+    es_kw = dict(monitor=monitor, mode='max' if monitor.endswith('auprc') else 'min',
+                 patience=patience, restore_best_weights=True)
+    try:
+        early_stop = EarlyStopping(start_from_epoch=min_epochs, **es_kw)
+    except TypeError:                                   # TF < 2.11 has no start_from_epoch
+        if min_epochs:
+            print(f"    [warn] this TensorFlow lacks start_from_epoch; min_epochs={min_epochs} ignored")
+        early_stop = EarlyStopping(**es_kw)
 
     history = model.fit(
         x_train, y_train,

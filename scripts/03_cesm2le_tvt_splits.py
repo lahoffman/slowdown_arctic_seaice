@@ -263,6 +263,10 @@ def parse_args() -> argparse.Namespace:
                              "auxiliary input): 100-member mean (default) or forcing-group mean.")
     parser.add_argument('--sst-lag', type=int, default=0,
                         help='Use JJA SST of year t − lag for target year t (default 0).')
+    parser.add_argument('--sst-window', type=int, default=1,
+                        help='Average this many consecutive JJA seasons from year t − lag '
+                             '(default 1; 10 = decade-mean SST over the trend window, the '
+                             '"concurrent" configuration, step 8.2).')
     parser.add_argument('--aux', choices=['none', 'sie_anom'], default='none',
                         help="Auxiliary scalar input stored alongside the maps "
                              "(default none; 'sie_anom' = September SIE anomaly at onset).")
@@ -362,6 +366,7 @@ def main(args: argparse.Namespace) -> None:
     print(f'  Labels       : {labels_file}')
     print(f'  Demean       : {args.demean}')
     print(f'  SST lag      : {args.sst_lag} yr')
+    print(f'  SST window   : {args.sst_window} yr' + ('  (concurrent decade-mean)' if args.sst_window > 1 else ''))
     print(f'  Aux input    : {args.aux}')
     print(f'  Open water   : {"aice > %g masked" % args.ice_threshold if args.openwater else "no"}')
     print(f'  Tag          : {tag or "(none — original configuration)"}')
@@ -381,6 +386,7 @@ def main(args: argparse.Namespace) -> None:
         sst_varname=SST_VARNAME,
         demean=args.demean,
         sst_lag=args.sst_lag,
+        sst_window=args.sst_window,
     )
     print(f'    SST shape : {sst.shape}  '
           f'(nens={sst.shape[0]}, nyear={sst.shape[1]}, '
@@ -390,6 +396,8 @@ def main(args: argparse.Namespace) -> None:
     # 1b.  Open-water variant: zero the anomaly under JJA sea ice (step 1.6)
     # ------------------------------------------------------------------
     if args.openwater:
+        if args.sst_window > 1:
+            raise NotImplementedError("--openwater with --sst-window > 1 is not defined (which year's ice?)")
         if not paths.CESM2LE_ICEMASK_JJA.exists():
             raise FileNotFoundError(f"{paths.CESM2LE_ICEMASK_JJA} not found — run "
                                     "scripts/02_cesm2le_icemask.py first.")
@@ -511,13 +519,14 @@ def main(args: argparse.Namespace) -> None:
             split_idx=k,
             savepath=paths.tvt_split_path(k, tag),
             attrs={
-                'sst_years':       f'{start_year - args.sst_lag}-{end_year - args.sst_lag}',
+                'sst_years':       f'{start_year - args.sst_lag}-{end_year - args.sst_lag + args.sst_window - 1}',
                 'target_years':    f'{start_year}-{end_year}',
                 'slowdown_var':    args.variable,
                 'slowdown_month':  args.month,
                 'labels_file':     str(labels_file),
                 'demean':          args.demean,
                 'sst_lag':         int(args.sst_lag),
+                'sst_window':      int(args.sst_window),
                 'aux':             args.aux,
                 'openwater':       int(args.openwater),
                 'ice_threshold':   float(args.ice_threshold) if args.openwater else 0.0,

@@ -55,6 +55,7 @@ def load_jja_sst_demeaned(
     sst_varname: str = 'sst_mon',
     demean: str = 'all',
     sst_lag: int = 0,
+    sst_window: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Load monthly SST for June, July, August; compute the JJA seasonal mean;
@@ -95,6 +96,12 @@ def load_jja_sst_demeaned(
         SST of year *t − sst_lag* (default 0: same-year JJA, as in the paper).
         With ``sst_lag=1`` the CNN is asked to *predict* the following
         September's trend onset rather than classify the concurrent one.
+    sst_window : int
+        Number of consecutive JJA seasons averaged, starting at year
+        *t − sst_lag*.  1 (default) is the onset-year map; 10 gives the
+        decade-mean SST over the trend window itself (the *concurrent*
+        configuration, revision step 8.2), i.e. what accompanies a slow
+        decade rather than what precedes it.
 
     Returns
     -------
@@ -106,6 +113,8 @@ def load_jja_sst_demeaned(
     """
     if sst_lag < 0:
         raise ValueError("sst_lag must be >= 0")
+    if sst_window < 1:
+        raise ValueError("sst_window must be >= 1")
 
     jja_months = ['JUN', 'JUL', 'AUG']
 
@@ -115,7 +124,10 @@ def load_jja_sst_demeaned(
     all_years       = np.arange(file_start_year, file_end_year + 1)
 
     # Year slice indices within the full file (SST years = target years − lag)
-    sst_start, sst_end = start_year - sst_lag, end_year - sst_lag
+    sst_start, sst_end = start_year - sst_lag, end_year - sst_lag + sst_window - 1
+    if sst_end > file_end_year:
+        raise ValueError(f"end_year − sst_lag + sst_window − 1 = {sst_end} exceeds the file end "
+                         f"{file_end_year}; lower --end-year or --sst-window.")
     if sst_start < file_start_year:
         raise ValueError(f"start_year − sst_lag = {sst_start} precedes the file start "
                          f"{file_start_year}; raise --start-year or lower --sst-lag.")
@@ -144,10 +156,15 @@ def load_jja_sst_demeaned(
     # Subtract the forced response ('all' = 100-member mean, 'group' = forcing group)
     sst_jja_dem = sst_jja - forced_response(sst_jja, demean)
 
-    years = all_years[idx_start:idx_end] + sst_lag      # target (label) years
+    if sst_window > 1:                                   # running mean over the trend window
+        cs = np.cumsum(np.concatenate([np.zeros_like(sst_jja_dem[:, :1]), sst_jja_dem], axis=1), axis=1)
+        sst_jja_dem = (cs[:, sst_window:] - cs[:, :-sst_window]) / sst_window
+        sst_jja_dem = sst_jja_dem.astype(np.float32)
+
+    years = all_years[idx_start:idx_end - sst_window + 1] + sst_lag      # target (label) years
 
     print(f"Loaded JJA SST: shape {sst_jja_dem.shape}, target years {years[0]}-{years[-1]}"
-          f" (SST years {sst_start}-{sst_end}, demean='{demean}')")
+          f" (SST years {sst_start}-{sst_end}, window {sst_window} yr, demean='{demean}')")
     return sst_jja_dem, years
 
 

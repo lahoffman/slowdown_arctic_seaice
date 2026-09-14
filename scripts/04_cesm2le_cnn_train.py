@@ -102,6 +102,9 @@ def parse_args() -> argparse.Namespace:
                         help='Ignore auxiliary scalars even if the split files have them.')
     parser.add_argument('--epochs', type=int, default=TRAIN_CONFIG['num_epochs'],
                         help=f"Max epochs (default {TRAIN_CONFIG['num_epochs']}; use 2 for a smoke test).")
+    parser.add_argument('--stopping', choices=['loss', 'auprc'], default='loss',
+                        help="Early-stopping rule: 'loss' = val_loss, patience 10 (original, tags rel_*); "
+                             "'auprc' = val AUPRC, patience 15, no stop before epoch 5 (Phase 8 tags).")
     parser.add_argument('--skip-existing', action='store_true',
                         help='Reuse a saved model instead of retraining it (resume after a crash).')
     return parser.parse_args()
@@ -118,6 +121,8 @@ def main() -> None:
     logs_dir = paths.LOGS_DIR / tag if tag else paths.LOGS_DIR
     use_aux = False if args.no_aux else None      # None = use if present
     train_config = {**TRAIN_CONFIG, 'num_epochs': args.epochs}
+    if args.stopping == 'auprc':
+        train_config.update(monitor='val_auprc', patience=15, min_epochs=5)
 
     print()
     print('=' * 70)
@@ -129,6 +134,8 @@ def main() -> None:
     print(f'  N runs     : {n_runs}  (seeds {BASE_SEED}–{BASE_SEED + n_runs - 1})')
     print(f'  Models dir : {models_dir}')
     print(f'  Metrics dir: {metrics_dir}')
+    print(f'  Stopping   : {train_config.get("monitor", "val_loss")}, patience {train_config["patience"]}, '
+          f'min epochs {train_config.get("min_epochs", 0)}')
     print(f'  Epochs     : {args.epochs}' + ('  (SMOKE TEST)' if args.epochs < TRAIN_CONFIG['num_epochs'] else ''))
     print('=' * 70)
 

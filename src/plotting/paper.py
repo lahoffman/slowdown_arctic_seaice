@@ -23,7 +23,7 @@ Main text                               Supplement
                                           fig_s17 label-definition sensitivity (baselines)
                                           fig_s18 ERSST vs OISST on the CESM2 grid
                                           fig_s19 observed Arctic index vs forced reference
-Extras: fig_phase_all, fig_regional_relevance, fig_sie_gmt_joint, fig_learning_curve, fig_learning_curves.
+Extras: fig_phase_all, fig_regional_relevance, fig_sie_gmt_joint, fig_learning_curve, fig_learning_curves, fig_occlusion.
 """
 
 from __future__ import annotations
@@ -355,6 +355,12 @@ def fig_learning_curve(history: Dict) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(6.5, 3.8))
     perf.learning_curve(ax, history)
     return fig
+
+
+def fig_occlusion(stacks: Dict[str, "xr.Dataset"]) -> plt.Figure:
+    """Region-occlusion skill loss per configuration (08_occlusion.py output)."""
+    from .occlusion import plot_occlusion
+    return plot_occlusion(stacks, out_png=None)
 
 
 def fig_learning_curves(histories: Sequence[Dict]) -> plt.Figure:

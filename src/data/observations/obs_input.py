@@ -115,13 +115,14 @@ def observed_sie_anomaly(nsidc_events_file: Path, years: np.ndarray, method: str
 
 def prepare_obs_input(product_path: Path, landmask_path: Path, forced_method: str,
                       ensmean_path: Path, groupmean_path: Path, start_year: int, end_year: int,
-                      sst_lag: int = 0, aux: str = "none", openwater: bool = False,
+                      sst_lag: int = 0, sst_window: int = 1, aux: str = "none", openwater: bool = False,
                       ice_threshold: float = 0.15, ice_product_path: Optional[Path] = None,
                       nsidc_events_file: Optional[Path] = None, cesm_metrics_dir: Optional[Path] = None) -> Dict:
     """
     Observed inputs for one CNN configuration, *unstandardised*.
 
-    Returns dict(residual (nyear, nx, ny): forced-removed JJA SST of year t − sst_lag,
+    Returns dict(residual (nyear, nx, ny): forced-removed JJA SST of year t − sst_lag
+    (averaged over ``sst_window`` seasons from there for the concurrent configuration),
     aux (nyear, naux) or None, icemask (nyear, nx, ny) or None, target_years, sst_years).
     """
     if forced_method not in FORCED_METHODS:
@@ -130,13 +131,16 @@ def prepare_obs_input(product_path: Path, landmask_path: Path, forced_method: st
         landmask = np.array(ds["landmask"][:])
     target_years = np.arange(start_year, end_year + 1)
     sst_years = target_years - sst_lag
+    all_sst_years = np.arange(sst_years[0], sst_years[-1] + sst_window)     # every season needed
 
     prod = load_monthly_product(product_path)
-    sst_jja = apply_land_ocean_mask(jja_by_year(prod, sst_years), landmask)
+    sst_jja = apply_land_ocean_mask(jja_by_year(prod, all_sst_years), landmask)
     ok = ~np.isnan(sst_jja).all(axis=(1, 2))
     if not ok.all():
-        raise ValueError(f"product lacks JJA data for years {sst_years[~ok]}")
-    residual = remove_forced(sst_jja, sst_years, forced_method, ensmean_path, groupmean_path)
+        raise ValueError(f"product lacks JJA data for years {all_sst_years[~ok]}")
+    residual = remove_forced(sst_jja, all_sst_years, forced_method, ensmean_path, groupmean_path)
+    if sst_window > 1:
+        residual = np.stack([np.nanmean(residual[k:k + sst_window], axis=0) for k in range(sst_years.size)])
 
     aux_arr = None
     if aux == "sie_anom":
@@ -153,7 +157,7 @@ def prepare_obs_input(product_path: Path, landmask_path: Path, forced_method: st
         residual = np.where(icemask, 0.0, residual)
 
     return dict(residual=residual, aux=aux_arr, icemask=icemask, target_years=target_years,
-                sst_years=sst_years, landmask=landmask, forced_method=forced_method)
+                sst_years=sst_years, sst_window=sst_window, landmask=landmask, forced_method=forced_method)
 
 
 def save_obs_input(res: Dict, out: Path, attrs: Dict) -> None:

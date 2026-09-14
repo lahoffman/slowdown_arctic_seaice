@@ -1,7 +1,7 @@
 """
 03_obs_test.py — observational CNN inputs for a retrained configuration (steps 6.1–6.3).
 
-Reads the configuration from the tag's split file (sst_lag, aux, openwater),
+Reads the configuration from the tag's split file (sst_lag, sst_window, aux, openwater),
 builds the matching observed input from either SST product, with the forced
 signal removed by the chosen reference, and saves it *unstandardised*;
 06_cnn_predict_obs.py standardises with each split's training statistics.
@@ -43,10 +43,10 @@ def parse_args():
 def config_from_split(tag):
     """sst_lag / aux / openwater / ice_threshold recorded by 03_cesm2le_tvt_splits.py."""
     if tag is None:
-        return dict(sst_lag=0, aux="none", openwater=False, ice_threshold=0.15)
+        return dict(sst_lag=0, sst_window=1, aux="none", openwater=False, ice_threshold=0.15)
     with xr.open_dataset(paths.tvt_split_path(0, tag)) as ds:
         a = ds.attrs
-    return dict(sst_lag=int(a.get("sst_lag", 0)), aux=str(a.get("aux", "none")),
+    return dict(sst_lag=int(a.get("sst_lag", 0)), sst_window=int(a.get("sst_window", 1)), aux=str(a.get("aux", "none")),
                 openwater=bool(int(a.get("openwater", 0))), ice_threshold=float(a.get("ice_threshold", 0.15) or 0.15))
 
 
@@ -55,6 +55,8 @@ def main():
     cfg = config_from_split(a.tag)
     if a.start_year is None:
         a.start_year = 1990 + cfg["sst_lag"]
+    if cfg["sst_window"] > 1:          # concurrent configuration: the last onset needs SST through t + window − 1
+        a.end_year = min(a.end_year, 2025 - cfg["sst_window"] + 1 + cfg["sst_lag"])
     out = paths.obs_input_file(a.product, a.forced_method, a.tag)
     print("03  —  observational CNN input")
     print(f"  product {a.product}   forced {a.forced_method}   tag {a.tag or 'orig'}   config {cfg}")
@@ -62,7 +64,7 @@ def main():
         product_path=paths.OBS_PRODUCTS[a.product], landmask_path=paths.LANDMASK_FILE,
         forced_method=a.forced_method, ensmean_path=paths.CESM2LE_ENSMEAN_JJA,
         groupmean_path=paths.CESM2LE_GROUPMEAN_JJA, start_year=a.start_year, end_year=a.end_year,
-        sst_lag=cfg["sst_lag"], aux=cfg["aux"], openwater=cfg["openwater"], ice_threshold=cfg["ice_threshold"],
+        sst_lag=cfg["sst_lag"], sst_window=cfg["sst_window"], aux=cfg["aux"], openwater=cfg["openwater"], ice_threshold=cfg["ice_threshold"],
         ice_product_path=paths.OISST_REGRIDDED, nsidc_events_file=paths.nsidc_sie_slowdown_events(9),
         cesm_metrics_dir=paths.CESM2LE_AICE_DIR / "metrics")
     oi.save_obs_input(res, out, dict(product=a.product, forced_method=a.forced_method, tag=a.tag or "",

@@ -6,6 +6,7 @@
 #   scripts/run_retrain.sh                         # full run: rel_base rel_aux rel_lag1 (9 x 5 x 50 epochs each)
 #   scripts/run_retrain.sh rel_aux                 # one configuration only
 #   nohup scripts/run_retrain.sh > /dev/null 2>&1 &   # detached; progress in results/logs/retrain_<tag>_<stamp>.log
+#   STOPPING=auprc scripts/run_retrain.sh rel_concurrent   # Phase-8 early-stopping rule (val AUPRC, min 5 epochs)
 #
 # Per tag:  04_cesm2le_cnn_train.py --tag T  →  06_cnn_predict_cesm2le.py --tag T
 #           →  07_baselines.py --cnn-tag T --tag T --labels-file <relative> --demean group
@@ -31,6 +32,7 @@ done
 [[ ${#TAGS[@]} -eq 0 ]] && TAGS=(rel_base rel_aux rel_lag1)
 
 TRAIN_OPTS=(--skip-existing)
+[[ -n "${STOPPING:-}" ]] && TRAIN_OPTS+=(--stopping "$STOPPING")   # STOPPING=auprc for Phase-8 tags
 if [[ $SMOKE -eq 1 ]]; then
   TRAIN_OPTS+=(--splits 0 --n-runs 1 --epochs 2)
   N_BOOT=50

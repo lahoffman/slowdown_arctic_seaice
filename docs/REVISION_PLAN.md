@@ -105,6 +105,44 @@ Repo facts the plan relies on (verified in the code):
 >
 > *Observations (6.1/6.2).* OISST v2.1 downloaded, monthly-averaged and block-averaged to the CESM2 grid. OISST is ≈0.5 °C warmer than ERSST in the central Arctic in the 1990s, converging by 2015, so ERSST's 1990–2025 Arctic JJA trend is ≈2× OISST's — ERSST leaves the ice-covered interior empty (74 % vs 99 % coverage) and pins under-ice cells near freezing, so cells switching to open water inflate its trend. After forced-signal removal the 2016–2025 Arctic anomaly is ≈0 or negative for all five references × both products, and 2010–2015 positive for all: the observational "no warm Arctic since 2016" statement is robust. Decision: OISST primary product (coverage), `group_cmip6` primary forced reference (observation-based emissions; CNN trained group-demeaned), others as range.
 
+> **Status (2026-09-14) — retrain complete for all four configurations; postprocess (occlusion, LRP, observational predictions) complete. Decision gate 1.8: Branch B unless the reformulation tests (Phase 8) change the picture.**
+>
+> *Skill on the Fig. S5 axes (test members, median over 9 splits × 5 seeds; `results/baselines/<tag>/baselines_summary.md`).* Prevalence 0.176; always-positive F1 0.30.
+>
+> | configuration | input | F1 | AUPRC | AUROC |
+> |---|---|---|---|---|
+> | `rel_base` | JJA SST map, onset year | 0.37 | 0.39 | 0.720 |
+> | `rel_aux` | + September SIE anomaly as scalar input | 0.39 | 0.39 | 0.723 |
+> | `rel_openwater` | `rel_aux` with ice-covered cells (aice > 0.15) set to zero anomaly | 0.34 | 0.35 | 0.692 |
+> | `rel_lag1` | `rel_aux` with SST of the year *before* onset | — | — | 0.624 |
+> | `logit_sie_anom` | SIE anomaly alone (linear) | 0.43 | 0.48 | 0.765 |
+> | `logit_indices` | Arctic SST + Niño 3.4 + IPO (linear) | 0.37 | 0.35 | 0.719 |
+> | `logit_sie_pacific` | SIE + Niño 3.4 + IPO (linear) | 0.45 | 0.52 | 0.798 |
+> | `logit_sie_ipo` | SIE + IPO (linear) | 0.45 | 0.53 | 0.800 |
+>
+> Reading: (i) no CNN configuration reaches the one-variable SIE regression; the bar for Branch A (`logit_sie_pacific`, 0.80) is not approached. (ii) `rel_aux` scores the same as `rel_base` although it is *given* the SIE anomaly: the network does not exploit the scalar it was handed (a single standardised scalar concatenated to the dense layer, dropout 0.2, early stopping after ~5–10 epochs) and still reads the ice state off the Arctic part of the map. The CNN is therefore a probe, not a tuned predictor, and must be described as such. (iii) The full SST map is worth what three area indices are worth (`rel_base` ≈ `logit_indices` on all three metrics). (iv) `rel_lag1`: at one-year lead the skill collapses to 0.62 — there is no *prediction*, only concurrent classification (Phase 2.4: "predict" → "classify" throughout). (v) `rel_openwater` loses 0.03 AUROC; the mask pattern itself (where the zeros are) still encodes the ice edge, so this is a lower bound on how much of the Arctic signal is ice cover, not a clean open-water test.
+>
+> *Region occlusion (5.3; `results/occlusion/<tag>/occlusion_summary.md`; ΔAUROC = occluded − full, median over 45 models; regions: Arctic >65°N, North Pacific, tropical Pacific, North Atlantic, everything except the Arctic).*
+>
+> | configuration | full | −Arctic | −N. Pacific | −trop. Pacific | −N. Atlantic | −all but Arctic |
+> |---|---|---|---|---|---|---|
+> | `rel_base` | 0.720 | **−0.096** | −0.001 | +0.003 | −0.001 | **+0.013** |
+> | `rel_aux` | 0.723 | **−0.077** | +0.001 | +0.002 | −0.000 | **+0.010** |
+> | `rel_openwater` | 0.679 | **−0.049** | −0.007 | +0.003 | −0.002 | +0.009 |
+> | `rel_lag1` | 0.624 | −0.027 | +0.002 | −0.001 | −0.004 | +0.014 |
+>
+> Reading: every configuration's skill is the Arctic; zeroing the whole extra-Arctic field costs nothing and *improves* the median by 0.01 (the network fits extra-Arctic noise). The Pacific boxes contribute ≤ 0.007 in every configuration, of either sign. Per-split (rel_base) the Arctic drop is 0.07–0.14 in all nine splits and the extra-Arctic drop is ≤ 0.016 and negative in six of nine. This settles 5.4: Key Point 3 (central-Pacific relevance) is not supported; the LRP hotspots in the Pacific (v1 Fig. 2, and the same hotspots in LB22's Fig. 2) are where the network *places* relevance, not where its skill comes from — an LRP-on-standardised-anomalies artefact (relevance follows variance) that the occlusion test exposes. Figure: `make_figure.py occlusion` (all configurations, one panel) — candidate main-text figure.
+>
+> *Training diagnostics (`results/logs/<tag>/history_split{k}_run{r}.json`; `make_figure.py learning_curves --tag <tag>`).* Validation focal loss is flat from epoch 1 (≈0.18 → 0.15 by epoch 30, noise ±0.03 on 410 validation samples / ~70 positives) while training loss falls 0.25 → 0.10: the generalisable signal is learnt in the first few epochs, the rest is memorisation. Train > val is expected (class-weighted, dropout, L2 in the training loss only). Early stopping (`val_loss`, patience 10, restore best) picks epochs 1–31; for `rel_base`, models whose best epoch was ≥ 3 show no relation between chosen epoch and test AUROC (r = 0.08; within-split anomaly +0.01 for epochs 3–12, −0.003 for 13–31), but the five models that stopped at epoch 1–2 are 0.04 AUROC below their split mean — essentially untrained networks that won a coin flip on validation noise. Between-split spread of AUROC (sd 0.044; split 7 ≈ 0.80, split 5 ≈ 0.65) is twice the seed spread (0.021): *which members are in the test set matters more than anything about training* (→ 3.2 report the split range, not a seed ±). Fix for any further training (not applied retroactively): `EarlyStopping(start_from_epoch=5)`, monitor `val_auprc` (add `keras.metrics.AUC(curve="PR")`). Learning-curve figure → SI as a training diagnostic.
+>
+> *Observational predictions (6.3).* `results/predictions/{ersst,oisst}/forced_{ensmean,group_cmip6,group_smbb,linear}/<tag>/cnn_prediction_<product>_M{k}_{r}.nc` exist for all four tags (ERSST × `rel_openwater` skipped by design: no ice field). Vote-fraction recount and Fig. 4 not yet done.
+>
+> *Events (3.3) for the other tags, LRP composites (Fig. 2) for the retrained models: not yet looked at.*
+>
+> *Why LB22 "worked" and this did not (for the Discussion).* (a) Physics: tropical-Pacific OHC drives GMST directly (ocean heat uptake; Kosaka & Xie 2013, England et al. 2014); its link to September SIE is an atmospheric bridge (Ding et al. 2014/2017, Baxter et al. 2019) that acts mainly in summer, competes with local circulation noise and then with the ice's own persistence/thickness memory — a second-order pathway with far lower signal-to-noise. (b) Predictor: OHC100 annual mean is an integrated, low-pass quantity; JJA SST is one noisy season of a surface field; the GMST target has no ice-floor problem. (c) Baseline: LB22's only reference model is a logistic regression on the IPO index (F1 0.28 vs ANN 0.40 at prevalence 0.10; always-positive F1 0.19); there is no regression on the GMST state at onset and no occlusion, i.e. the test this revision applies is one the parent paper did not have to pass. The paper should state (a) and (b) explicitly and make (c) as a general methodological point (persistence baselines and occlusion are needed before XAI hotspots are read as precursors), not as a criticism of LB22.
+>
+> *Decision gate 1.8.* Branch A requires `rel_aux` > `logit_sie_pacific` on AUROC/AUPRC in most splits: it is 0.08 AUROC *below* and below the one-variable regression. **Branch B** on the predictive question. Before the rewrite, Phase 8 asks the *concurrent/diagnostic* version of the SST–ice question (what accompanies a slow decade, rather than what precedes it), which is the question Baxter et al. (2019) answered with composites and which the atmospheric-bridge mechanism makes more plausible; its outcome decides between "clean negative" and "no predictive skill, but a concurrent Pacific modulation". The lead-0 negative result stays in the paper under either outcome.
+
 > **SI figure numbering (v2).** S1 definition (unchanged) · **S2 pooled σ and onset cap (new)** · **S3 forcing-group forced response (new)** · S4 label distributions · S5 baselines · S6 PR curve · S7 confusion matrices · S8 metric strip · S9 test-member timeline · S10 composites all vs CNN · S11–S13 FP/TN/FN composites · S14 P(event | phase) train · S15 SIE vs GMT · S16 obs phase composites. The review sections above this block quote v1 numbers (v1 S3–S14 = v2 S5–S16).
 
 The phase has two halves: 1.1 established the baselines; 1.2–1.8 retrain the CNN so that its skill is measured *beyond* the scalar predictors (SIE anomaly at onset, Arctic SST index, Niño 3.4, IPO). Everything is designed so the answer is unambiguous either way.
@@ -134,19 +172,19 @@ Split files record `target_years = 1990-2030` (`1991-2030` for lag1), `demean = 
 
 *Manuscript changes from 1.2/1.3 (tracked changes pending).* New Fig. S2 (σ / cap) and Fig. S3 (forcing groups); old S2–S14 renumbered S4–S16 (`make_figure.py` and `paper.py` already use the new ids). §2.1: forced response removed per forcing group, with the obs reference deferred to Phase 6.1. §2.3: pooled σ, onsets 1990–2030, one clause that all windows roll off from ≈2028. Fig. S1 and S4 unchanged in content. After 1.4: every CNN-based figure — Figs 2, 3, S6–S14 — is regenerated with `make_figure.py --tag rel_aux` (or whichever configuration 1.8 selects), Fig. S5 gains the retrained CNN bars, Fig. 4 waits for Phase 6.
 
-**Step 1.4 — IN PROGRESS. Train three configurations, same architecture, 9 splits × 5 seeds each** (`scripts/run_retrain.sh`, which chains 04 → 06 → 07 per tag, is resumable via `04 --skip-existing`, and has a `--smoke` mode: 1 split, 1 seed, 2 epochs).
+**Step 1.4 — DONE (2026-09-13/14; `rel_base` 4 h 20 min, four tags ≈ 17 h on profx). Train three configurations, same architecture, 9 splits × 5 seeds each** (`scripts/run_retrain.sh`, which chains 04 → 06 → 07 per tag, is resumable via `04 --skip-existing`, and has a `--smoke` mode: 1 split, 1 seed, 2 epochs).
 - `base`: JJA SST of the onset year (as now), on the new labels. Reference run.
 - `aux`: same SST plus the September SIE anomaly at onset as a scalar input concatenated before the dense layer. The CNN can then only earn skill *beyond* the ice state. Headline configuration.
 - `lag1`: JJA SST of the year *before* onset (+ the SIE scalar). Tests whether SST-pattern skill exists at one year lead, i.e. whether "predict" is defensible.
 (Absorbs the earlier lag-1, skip-first-year and residualised-target ideas.)
 
-**Step 1.5 — Evaluate every configuration on the Fig. S5 axes.** `06_cnn_predict_cesm2le.py` then `07_baselines.py --labels-file <relative> --tag <config>` for each, so all three land next to the same baselines. Member-block bootstrap (Phase 3.2). The bar to clear is `logit_sie_pacific` (SIE + Niño 3.4 + IPO, AUROC ≈ 0.79), not always-positive.
+**Step 1.5 — DONE (`results/baselines/<tag>/baselines_summary.md`; table in the 2026-09-14 status block).** Evaluate every configuration on the Fig. S5 axes. `06_cnn_predict_cesm2le.py` then `07_baselines.py --labels-file <relative> --tag <config>` for each, so all three land next to the same baselines. Member-block bootstrap (Phase 3.2). The bar to clear is `logit_sie_pacific` (SIE + Niño 3.4 + IPO, AUROC ≈ 0.79), not always-positive.
 
-**Step 1.6 — Under-ice SST (Zach's comment) — code done, training queued.** `scripts/02_cesm2le_icemask.py` nearest-neighbour regrids the JJA-mean CICE concentration of every member-year to the SST grid and saves the `aice > 0.15` mask (`cesm2le/aice/icemask/`, diagnostic `figures/diagnostics/icemask_summary.png`); `03 --openwater` zeroes the demeaned SST anomaly under that mask before standardisation (lagged inputs use the mask of the SST year); the split records `openwater` / `ice_threshold`. In CESM2 the SST in ice-covered cells is pinned near freezing, so the Arctic SST anomaly map is partly an ice-concentration map. Train an `openwater` variant of `aux` in which cells with `aice > 0.15` in JJA of the onset year are set to zero anomaly, and repeat the Arctic occlusion test (Phase 5.3). If skill and Arctic relevance survive on open-water SST alone, the "ocean preconditioning" language is earned; if not, the Arctic signal is ice cover. Also document what ERSSTv5 / OISST assign under ice, since the observational input inherits the product's convention.
+**Step 1.6 — DONE (`rel_openwater`: AUROC 0.69, Arctic occlusion −0.049 vs −0.096 for `rel_base`; caveat: the zero pattern still encodes the ice edge).** `scripts/02_cesm2le_icemask.py` nearest-neighbour regrids the JJA-mean CICE concentration of every member-year to the SST grid and saves the `aice > 0.15` mask (`cesm2le/aice/icemask/`, diagnostic `figures/diagnostics/icemask_summary.png`); `03 --openwater` zeroes the demeaned SST anomaly under that mask before standardisation (lagged inputs use the mask of the SST year); the split records `openwater` / `ice_threshold`. In CESM2 the SST in ice-covered cells is pinned near freezing, so the Arctic SST anomaly map is partly an ice-concentration map. Train an `openwater` variant of `aux` in which cells with `aice > 0.15` in JJA of the onset year are set to zero anomaly, and repeat the Arctic occlusion test (Phase 5.3). If skill and Arctic relevance survive on open-water SST alone, the "ocean preconditioning" language is earned; if not, the Arctic signal is ice cover. Also document what ERSSTv5 / OISST assign under ice, since the observational input inherits the product's convention.
 
-**Step 1.7 — Attribution on the retrained models.** `05_cesm2le_lrp.py` on `aux`, `lag1` and `openwater`; TP composites (Fig. 2) and the occlusion test (Phase 5.3) on the same models. With SIE(t) supplied as a scalar, Arctic relevance in the SST map can no longer be "the ice edge"; whatever remains there or in the Pacific is the pattern information.
+**Step 1.7 — LRP DONE for all four tags (`results/attributions/<tag>/`, 45 files each); occlusion DONE (table above); TP composites (Fig. 2 with `--tag`) not yet drawn.** `05_cesm2le_lrp.py` on `aux`, `lag1` and `openwater`; TP composites (Fig. 2) and the occlusion test (Phase 5.3) on the same models. With SIE(t) supplied as a scalar, Arctic relevance in the SST map can no longer be "the ice edge"; whatever remains there or in the Pacific is the pattern information.
 
-**Step 1.8 — Decision gate.** Branch A: `aux` beats `logit_sie_pacific` on AUROC/AUPRC across most splits → the paper claims SST-pattern predictability of Arctic SIE slowdowns beyond the ice state, with `lag1` deciding whether it is prediction or diagnosis. Branch B: it does not → the contribution is methodological (Fig. S5 as the central result, Phase 6.6). Either branch is publishable; §3.1 was written to hold under both. Phase 6 and 7 rewriting waits for this gate, except the branch-independent items (6.1, 6.2, 6.7, clean-up).
+**Step 1.8 — DECIDED: Branch B on the predictive question (see 2026-09-14 status block); Phase 8 tests the concurrent question before the rewrite.** Branch A: `aux` beats `logit_sie_pacific` on AUROC/AUPRC across most splits → the paper claims SST-pattern predictability of Arctic SIE slowdowns beyond the ice state, with `lag1` deciding whether it is prediction or diagnosis. Branch B: it does not → the contribution is methodological (Fig. S5 as the central result, Phase 6.6). Either branch is publishable; §3.1 was written to hold under both. Phase 6 and 7 rewriting waits for this gate, except the branch-independent items (6.1, 6.2, 6.7, clean-up).
 
 ---
 
@@ -192,12 +230,12 @@ Split files record `target_years = 1990-2030` (`1991-2030` for lag1), `demean = 
 
 **Step 5.2 — Define VE.** Write the formula used (presumably η² / R² of the binary indicator on the categorical phase). Report it with block-bootstrap CIs and replace "strongly" with language proportional to ~11%.
 
-**Step 5.3 — XAI robustness.** Add to `src/xai/`:
+**Step 5.3 — Occlusion DONE (`08_occlusion.py`, `src/analysis/occlusion.py`; results in the 2026-09-14 status block; figure `make_figure.py occlusion`). Second attribution method and shuffled-labels check still to do.** Add to `src/xai/`:
 - a second attribution method (Integrated Gradients or SmoothGrad via `innvestigate`/TF), compare spatial correlation with LRP-z;
 - an occlusion test: zero (set to climatology) the Arctic (>60°N), tropical Pacific, and North Pacific boxes already defined in `XAI_CONFIG['regions']` and record the F1 drop for each — this is the cleanest "what matters" evidence and does not depend on LRP;
 - a sanity check: LRP from randomly-initialised and from label-shuffled-trained networks (Adebayo-style), to show the Arctic pattern is not architecture-driven.
 
-**Step 5.4 — Drop or support the CP-El Niño narrative.** Unless the occlusion test shows a measurable skill contribution from the central Pacific, remove Key Point 3 and the CP/EP discussion, or move it to a hedged sentence. Reconcile Key Points with results (Niño 3.4 VE = 1.3% cannot coexist with "highly relevant").
+**Step 5.4 — DECIDED by occlusion: tropical/central Pacific contributes ≤ 0.007 AUROC in every configuration → Key Point 3 and the CP/EP discussion go; LRP Pacific hotspots are reported as an attribution artefact, with the occlusion figure as the evidence.** Unless the occlusion test shows a measurable skill contribution from the central Pacific, remove Key Point 3 and the CP/EP discussion, or move it to a hedged sentence. Reconcile Key Points with results (Niño 3.4 VE = 1.3% cannot coexist with "highly relevant").
 
 ---
 
@@ -207,7 +245,7 @@ Split files record `target_years = 1990-2030` (`1991-2030` for lag1), `demean = 
 
 **Step 6.2 — PIPELINE DONE, evaluation pending retrained CNNs.** OISST v2.1 downloaded (1990–2025), monthly `sst` + `ice`, block-averaged to the CESM2 grid (`01_oisst_preprocessing.py`, check `02_oisst_regrid_check.py`). `02_obs_compare_products.py`: OISST ≈0.5 °C warmer than ERSST in the central Arctic in the 1990s, converging by 2015 → ERSST Arctic trend ≈2× OISST; coverage 99 % vs 74 % of Arctic ocean cells (ERSST leaves the ice-covered interior empty). Decision: OISST primary product. Observational predictions for every tag × product × reference run in `run_postprocess.sh`. Figure `diagnostics/obs_products_compare.png` → SI. References Huang20 / Banzon16 / Reynolds07 in references.bib. *Original plan:* OISSTv2.1 (NOAA, daily, 0.25°, Sept 1981–present, satellite AVHRR + in situ, with an explicit sea-ice-concentration-based proxy SST under ice) is what the Arctic Report Card SST chapter uses. Steps: (i) add `src/data/observations/oisst/download.py` pulling monthly means from NOAA PSL (`sst.mon.mean.nc`, ~1 GB) and its ice-concentration companion if available; (ii) reuse `regrid_to_cesm2le.py` (bilinear, ocean-only) — check the land/ice mask handling because OISST has values under ice while the CESM2 grid treats those cells as ocean with SST ≈ −1.8 °C; (iii) run `03_ersst_test.py`-equivalent for OISST with both forced-removal methods; (iv) show the Arctic SST index and the ensemble vote fraction for ERSSTv5 and OISST side by side (new Fig. S). Also note ERSSTv6 exists (Zach); a one-line justification for whichever product is primary is needed in §2.2. This step is independent of everything in Phases 1–5 and can be done by a student/RA in parallel. *Code (2026-09-13):* `src/data/observations/oisst/` downloads the daily AVHRR-only files month by month, averages them to monthly `sst` and `ice` on the 0.25° grid (dailies deleted), and block-averages onto the CESM2 grid with the same `sst_obs` layout as ERSST plus `ice_obs`; `scripts/02_obs_compare_products.py` compares the two products on the CESM2 grid (Arctic JJA series, climatology and trend difference maps, coverage/ice) so the choice of primary product in §2.2 is documented rather than asserted.
 
-**Step 6.3 — Fix text/figure mismatches.** Recompute the fraction of CNNs predicting a slowdown for each onset year 2016–2025 and state the numbers; the current text ("fewer than 20% … 2017–2025") disagrees with Fig. 4b (2017 ≈ 0.35–0.4; 2016 ≈ 0.85 is not mentioned). Extend observed labels to onset year 2016 (2016–2025 needs September 2025, which is available).
+**Step 6.3 — Predictions DONE for all tags × products × references (`run_postprocess.sh`); recount and text fix pending.** Recompute the fraction of CNNs predicting a slowdown for each onset year 2016–2025 and state the numbers; the current text ("fewer than 20% … 2017–2025") disagrees with Fig. 4b (2017 ≈ 0.35–0.4; 2016 ≈ 0.85 is not mentioned). Extend observed labels to onset year 2016 (2016–2025 needs September 2025, which is available).
 
 **Step 6.4 — Replace Fig. 4a.** Remove the single-CNN panel; show the ensemble fraction with block-bootstrap uncertainty, and mark event-level hits/misses for the two independent observed events.
 
@@ -219,6 +257,32 @@ Split files record `target_years = 1990-2030` (`1991-2030` for lag1), `demean = 
 
 - **Branch A (signal survives lagged/skip-first tests):** "Arctic SST preconditioning at one-year lead carries skill beyond the initial ice state; tropical Pacific modulation is weak and model-dependent." Keep a *heavily* hedged observational application with no "end of the pause" claim in the abstract.
 - **Branch B (signal does not survive):** reframe the paper as a cautionary methodological result: a CNN+XAI pipeline trained on a large ensemble recovers a known statistical property (initial-condition dependence of decadal trends) and presents it as ocean preconditioning; the paper's contribution becomes the demonstration of the necessary controls (baselines, lag tests, occlusion) for XAI-based "precursor" claims in sea ice. This is publishable and consistent with the first author's XAI-trustworthiness work.
+
+---
+
+## Phase 8 — Reformulating the SST–ice question (added 2026-09-14)
+
+Phase 1 answered the *predictive* question (does the SST state at onset carry information about the coming decade beyond the ice state?) with a no. Baxter et al. (2019) and the Ding et al. teleconnection literature ask a *concurrent* question — which SST pattern accompanies fast versus slow decline — and the atmospheric-bridge mechanism (summer tropical SST → Arctic circulation → same-summer melt) makes that the version where a Pacific signal should show if it exists at all. These are different scientific questions, decided on before seeing the numbers; both answers go in the paper. Order: cheap → one retrain → second retrain only if warranted.
+
+**Step 8.1 — Residual on baselines (hours, no training; `scripts/09_residual_analysis.py`, `src/analysis/residual.py`, `src/plotting/residual.py`).** Continuous target: the 10-yr trend anomaly (`trend_anom` in the relative label file), no 1σ threshold. Stage 1: OLS trend ~ SIE anomaly at onset, fit on training members per split, test R². Stage 2: OLS of the *residual* on each index set (Arctic SST, Niño 3.4, IPO, Pacific, all indices), with the indices taken (a) at onset and (b) averaged over the 10 JJA seasons of the trend window (concurrent); test R² and ΔR² over the SIE-only model. Descriptive maps: pointwise correlation of the pooled residual with JJA SST at onset and with the decade-mean JJA SST (Baxter-style). Outputs `results/residual/residual_skill.nc`, `residual_summary.md`, `residual_corr_maps.nc`, `figures/diagnostics/residual_analysis.png`. *Read-out:* if the concurrent Pacific indices explain a non-trivial share of the residual (ΔR² ≳ 0.05) while the onset indices do not, 8.2 is worth a retrain and the paper gets a "concurrent modulation, no predictability" result; if both are ≈ 0, the paper is the clean negative and 8.2 is optional.
+
+```
+python scripts/09_residual_analysis.py            # ~10 min incl. the two SST loads
+```
+
+**Step 8.2 — Concurrent-decade CNN (one overnight retrain).** `03 --sst-window 10`: the input map for onset *t* is the mean of the demeaned JJA SST over years *t … t+9* (running mean in `load_jja_sst_demeaned(sst_window=…)`; split attr `sst_window`), with the SIE scalar (`--aux sie_anom`) so that the map can only earn credit beyond the ice state; tag `rel_concurrent`. Same 04 → 06 → 07 → 08 → 05 chain. The observational version is possible only for onsets ≤ 2016 (needs SST through 2025); `03_obs_test.py` caps `--end-year` accordingly. *Read-out:* occlusion on `rel_concurrent` — if the tropical/North-Pacific drop becomes O(0.03–0.05) while it stays ≈ 0 at lead 0, that is the paper's positive result; if the Arctic is still all there is, the negative is complete.
+
+```
+python scripts/03_cesm2le_tvt_splits.py --labels-file $LBL --demean group --end-year 2030 --aux sie_anom --sst-window 10 --tag rel_concurrent --no-fig
+scripts/run_retrain.sh --smoke rel_concurrent && rm $SLOWDOWN_DATA_ROOT/results/models/rel_concurrent/cnn_jja_split0_run0.h5
+nohup scripts/run_retrain.sh rel_concurrent > $SLOWDOWN_DATA_ROOT/results/logs/retrain_concurrent_nohup.out 2>&1 &
+# afterwards
+nohup scripts/run_postprocess.sh rel_concurrent > $SLOWDOWN_DATA_ROOT/results/logs/postprocess_concurrent_nohup.out 2>&1 &
+```
+
+**Step 8.3 — Regional target (second retrain, only if 8.1/8.2 suggest a Pacific signal).** Pan-Arctic SIE dilutes the Pacific pathway; Ding's and Baxter's signals are strongest in the Pacific sector (Chukchi / Beaufort / East Siberian, ≈ 120°E–120°W, > 65°N). Compute September sector SIE from `aice` × `tarea` on the CICE grid (`02_cesm2le_slowdowns_relative.py --sector pacific`, to be written), relative labels as before, `rel_concurrent`-style inputs, tag `rel_pacsector`. Not started.
+
+**Training changes for 8.2/8.3 (from the learning-curve diagnosis):** `EarlyStopping(start_from_epoch=5)` and monitor `val_auprc` (`keras.metrics.AUC(curve="PR", name="auprc")` in `compile`), patience 15. Applied in `src/cnn/train.py` for new tags only; the four existing tags are not retrained for this.
 
 ---
 
@@ -253,9 +317,9 @@ Split files record `target_years = 1990-2030` (`1991-2030` for lag1), `demean = 
 |---|---|---|---|---|
 | 1 | 1.1 baselines on both label sets; relative labels + window sweep; Fig. S3; §2.3 and §3.1 rewritten | no | — | **done** |
 | 2 | 1.2 labels (pooled σ, onsets ≤ 2030; Fig. S2); 1.3 group-wise SST demeaning (Fig. S3), `--sst-lag`, auxiliary input, `--tag`; splits `rel_base` / `rel_aux` / `rel_lag1` built | no | — | **done** (tracked changes for §2.1/§2.3 + SI renumbering pending) |
-| 3 | 1.4 train `base`, `aux`, `lag1` (3 × 45 CNNs); 1.5 predict + baselines per config; 1.6 `openwater` variant | yes | 4–5 days compute | next |
-| 4 | 1.7 LRP on retrained models; 5.3 occlusion + second XAI method; 5.1 all-slowdown conditioning | LRP only | 2 days | |
-| 5 | 1.8 decision gate → Branch A or B; 6.6 rewrite | — | — | |
+| 3 | 1.4 train `base`, `aux`, `lag1` (3 × 45 CNNs); 1.5 predict + baselines per config; 1.6 `openwater` variant | yes | ≈17 h on profx | **done** |
+| 4 | 1.7 LRP on retrained models; 5.3 occlusion (second XAI method pending); 5.1 all-slowdown conditioning (pending) | LRP only | 2 days | **LRP + occlusion done** |
+| 5 | 1.8 decision gate → **Branch B on prediction**; 8.1 residual baselines → 8.2 concurrent CNN (→ 8.3 regional) before the 6.6 rewrite | 8.2: one retrain | 1 day + 1 night | next |
 | 6 | 6.1 detrending comparison, 6.3 recount, 6.7 obs LRP composites (on the retrained `aux` models) | LRP only | 1–2 days | |
 | 7 | 3.2 block bootstrap, 5.2 VE in main text, 4.2 sensitivity sweep (logistic only) | no | 1–2 days | |
 | 8 | 6.2 OISST v2.1 (parallel); optional items as time allows | partly | 2–3 days | parallel |

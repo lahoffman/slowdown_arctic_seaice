@@ -12,7 +12,7 @@ Usage:
   python scripts/make_figure.py 4 --forced-method ensmean
   python scripts/make_figure.py all --fmt pdf
 
-Figure ids: 1 2 3 4 S1 … S15, S17 S18 S19 plus extras phase_all, regional, sie_gmt_joint, learning_curve, learning_curves.
+Figure ids: 1 2 3 4 S1 … S15, S17 S18 S19 plus extras phase_all, regional, sie_gmt_joint, learning_curve, learning_curves, occlusion.
 """
 
 import argparse
@@ -176,6 +176,19 @@ class Data:
             return dict(y_true={"train": sp["slow_tr"], "val": sp["slow_va"], "test": sp["slow_te"]},
                         y_score=score, threshold=thr, history=hist)
         return self.get("single", _load)
+
+    def occlusion(self, tags=("rel_base", "rel_aux", "rel_openwater", "rel_lag1", "rel_concurrent")):
+        """Stacked occlusion results for every configuration that has them."""
+        def _load():
+            out = {}
+            for t in tags:
+                files = sorted((paths.RESULTS_DIR / "occlusion" / t).glob("occlusion_split*.nc"))
+                if files:
+                    out[t] = xr.concat([xr.open_dataset(f) for f in files], dim="split")
+            if not out:
+                raise FileNotFoundError("no results/occlusion/<tag>/occlusion_split*.nc")
+            return out
+        return self.get("occlusion", _load)
 
     def histories(self):
         """Training histories of every saved model for this tag."""
@@ -392,6 +405,7 @@ FIGURES = {
     "sie_gmt_joint":  (lambda d: paper.fig_sie_gmt_joint(d.sie_gmt()["gmt_tr"], d.sie_gmt()["sie_tr"]), "joint PDF of GMT and SIE trends"),
     "learning_curve": (lambda d: paper.fig_learning_curve(d.single()["history"]), "loss vs epoch, one CNN"),
     "learning_curves": (lambda d: paper.fig_learning_curves(d.histories()), "loss vs epoch, all 45 CNNs of a tag"),
+    "occlusion": (lambda d: paper.fig_occlusion(d.occlusion()), "region occlusion, all configurations"),
 }
 
 
