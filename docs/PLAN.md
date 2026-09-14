@@ -42,7 +42,7 @@ Status: `[x]` done · `[~]` in progress / partly done · `[ ]` to do · `[-]` dr
 
 - [ ] 5.1 Report P(slowdown | phase) for *all* slowdowns in the main text (abstract claims must use these numbers, not TP-only).
 - [ ] 5.2 Define VE in the main text; fix `(ref)` in Text S5; tone down "strongly".
-- [~] 5.3 XAI robustness: occlusion done for all four tags (`results/occlusion/<tag>/`). *Result: −Arctic costs 0.10 / 0.08 / 0.05 / 0.03 AUROC (base / aux / openwater / lag1); −everything-else *gains* +0.01 in all four; Pacific boxes ≤ 0.007 either sign.* Figure `make_figure.py occlusion` (candidate main-text figure). Second attribution method and shuffled-labels check still to do.
+- [~] 5.3 XAI robustness: occlusion done for all four tags; **multi-method attribution** coded (`05b_xai_compare.py`: LRP-z/α2β1, DeepTaylor, IG, SmoothGrad, input×grad, SHAP-Deep if `pip install shap`) → composites, inter-method correlation, region share vs occlusion ΔAUROC. Run on `rel_aux` (v1 reference) and the final `off1_aux`. Occlusion done for all four tags (`results/occlusion/<tag>/`). *Result: −Arctic costs 0.10 / 0.08 / 0.05 / 0.03 AUROC (base / aux / openwater / lag1); −everything-else *gains* +0.01 in all four; Pacific boxes ≤ 0.007 either sign.* Figure `make_figure.py occlusion` (candidate main-text figure). Second attribution method and shuffled-labels check still to do.
 - [~] 5.4 Decided by occlusion: Key Point 3 and the CP/EP-El Niño narrative go; LRP Pacific hotspots (ours and LB22's) reported as relevance-follows-variance, not skill. *Text change pending.*
 
 ## Phase 6 — Observations

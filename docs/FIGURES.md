@@ -62,3 +62,25 @@ deleted from the GRL manuscript, which stays as the backup.
 6. The bridge that exists: Pacific–SIE interannual link, model sign, nonstationarity (interannual (a, b, e)).
 7. Training and design diagnostics: learning curves + frozen-scalar synthetic (`learning_curves`, `aux_frozen_synthetic`).
 8. Observations: Arctic index under all forced references × products (S19), and what the retrained CNN says (fig_4-style).
+
+## Proposed AIES supplementary figures (≈ 12)
+
+| SI # | file | content |
+|---|---|---|
+| S1 | `fig_S1.pdf` | slowdown definition, 6 panels (onset-inclusive vs offset window marked) |
+| S2 | `fig_S2.pdf` | pooled σ and onset cap |
+| S3 | `fig_S3.pdf` | forcing-group forced response, SMBB − CMIP6 |
+| S4 | `fig_S4.pdf` | label distributions |
+| S5 | `fig_S5_<tag>.pdf` | baselines vs CNN on the *onset-inclusive* labels (the original comparison, for reference; main-text Fig. 3 is the offset version) |
+| S6 | `fig_S6.pdf` + `fig_S7.pdf` | PR curve and confusion matrices, final CNN |
+| S7 | `fig_S8.pdf` + `fig_S9.pdf` | metric strip and test-member timeline |
+| S8 | `fig_S10.pdf` | SST composites: all slowdowns vs CNN-classified (association vs selection) |
+| S9 | `event_stats_<tag>.png` | event durations, onsets by year, event-level vs sample-level skill |
+| S10 | `fig_S17.pdf` | label-sensitivity sweep (8–15 yr × 0.5–1.5σ), offset labels |
+| S11 | `residual_analysis_w3_off1.png`, `..._w5_off1.png` | residual analysis for 3- and 5-yr windows (timescale-matched Pacific index) |
+| S12 | `fig_S18.pdf` | ERSST vs OISST on the CESM2 grid (coverage, under-ice treatment, trend) |
+| S13 | `fig_S15.pdf` | SIE vs GMT slowdown coincidence (27 %) |
+| S14 | `openwater_check_<tag>.png` | open-water masking check (what the `openwater` CNN sees) |
+| S15 | `regression_<tag>.png` | CNN regression vs OLS per split (if not in main) |
+| S16 | `fig_4`-style | CNN votes on observations, both products × four forced references |
+| Text S1–S4, Tables S1–S3 | — | label construction; splits and bootstrap; occlusion regions; OISST processing; configurations × metrics; sweep table; residual ΔR² by window |
