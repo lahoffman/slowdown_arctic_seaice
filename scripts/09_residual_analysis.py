@@ -36,6 +36,9 @@ def parse_args():
     p.add_argument("--labels-file", type=Path,
                    default=paths.CESM2LE_DIR / "slowdowns" / "cesm2le_sie_slowdown_relative_SEP_w10_s1_group_1990-2100.nc")
     p.add_argument("--start-year", type=int, default=1990); p.add_argument("--end-year", type=int, default=2030)
+    p.add_argument("--siv-months", nargs="+", default=["SEP"],
+                   help="months of sea-ice volume to test as extra ice-state scalars (e.g. SEP MAR); "
+                        "MAR of the onset year precedes the September onset, so it is a legitimate predictor")
     p.add_argument("--no-maps", action="store_true"); p.add_argument("--no-fig", action="store_true")
     return p.parse_args()
 
@@ -45,32 +48,34 @@ def main():
     out_dir = paths.RESULTS_DIR / "residual"; out_dir.mkdir(parents=True, exist_ok=True)
     years = np.arange(a.start_year, a.end_year + 1)
     with xr.open_dataset(a.labels_file) as ds:
-        window = int(ds.attrs.get("window", 10))
+        window = int(ds.attrs.get("window", 10)); offset = int(ds.attrs.get("trend_offset", 0))
         trend = ds["trend_anom"].sel(nyr=slice(a.start_year, a.end_year)).values.astype(float)
     _, sie_anom = bl.load_sie_anomaly(paths.CESM2LE_AICE_DIR / "metrics", years, demean="group")
-    print(f"09  —  residual analysis  onsets {a.start_year}–{a.end_year}, window {window} yr, "
+    print(f"09  —  residual analysis  onsets {a.start_year}–{a.end_year}, window {window} yr, offset {offset}, "
           f"{np.isfinite(trend).sum()} member-years")
 
-    # indices: onset year and mean over the trend decade
-    idx_long = bl.load_climate_indices_jja(paths.CESM2LE_CLIMATE_INDICES_DIR, a.start_year, a.end_year + window - 1)
-    yrs_long = np.arange(a.start_year, a.end_year + window)
+    # indices: onset year, and mean over the trend decade t+offset … t+offset+window−1
+    idx_long = bl.load_climate_indices_jja(paths.CESM2LE_CLIMATE_INDICES_DIR, a.start_year, a.end_year + offset + window - 1)
+    yrs_long = np.arange(a.start_year, a.end_year + offset + window)
     idx_onset = {k: v[:, :years.size] for k, v in idx_long.items()}
-    idx_conc = {k: rs.window_mean(v, yrs_long, years, window) for k, v in idx_long.items()}
+    idx_conc = {k: rs.window_mean(v, yrs_long, years + offset, window) for k, v in idx_long.items()}
 
     ds = rs.residual_skill(trend, sie_anom, idx_onset, idx_conc, years)
     resid, r2_pooled = rs.pooled_residual(trend, sie_anom)
     ds.to_netcdf(out_dir / "residual_skill.nc")
     md = rs.summary_markdown(ds, r2_pooled)
 
-    # step 8.5: sea-ice volume as a second state variable, if 01 --variable hi has been run
-    siv_anom = bl.load_siv_anomaly(paths.CESM2LE_AICE_DIR / "metrics", years, demean="group")
-    if siv_anom is not None:
-        ds_v = rs.residual_skill(trend, siv_anom, idx_onset, idx_conc, years)          # volume alone
-        ds_sv = rs.residual_skill(trend, sie_anom, idx_onset, idx_conc, years, extra_state={"siv_anom": siv_anom})
+    # step 8.5: sea-ice volume (one or more months) as extra ice-state scalars, if 01 --variable hi has been run
+    for mon in a.siv_months:
+        siv_anom = bl.load_siv_anomaly(paths.CESM2LE_AICE_DIR / "metrics", years, month=mon, demean="group")
+        if siv_anom is None:
+            print(f"  [skip] no sivoln_*_{mon}.nc"); continue
+        ds_v = rs.residual_skill(trend, siv_anom, idx_onset, idx_conc, years)
+        ds_sv = rs.residual_skill(trend, sie_anom, idx_onset, idx_conc, years, extra_state={f"siv_{mon}": siv_anom})
         _, r2_sv = rs.pooled_residual(trend, sie_anom, siv_anom)
-        ds_sv.to_netcdf(out_dir / "residual_skill_sie_siv.nc")
-        md += (f"\n## With September sea-ice volume (step 8.5)\n\nStage-1 test R² (median): SIE {float(ds['r2_sie'].median()):.3f}, "
-               f"volume alone {float(ds_v['r2_sie'].median()):.3f}, SIE + volume **{float(ds_sv['r2_sie'].median()):.3f}**.\n\n"
+        ds_sv.to_netcdf(out_dir / f"residual_skill_sie_siv{mon}.nc")
+        md += (f"\n## With {mon} sea-ice volume (step 8.5)\n\nStage-1 test R² (median): SIE {float(ds['r2_sie'].median()):.3f}, "
+               f"{mon} volume alone {float(ds_v['r2_sie'].median()):.3f}, SIE + {mon} volume **{float(ds_sv['r2_sie'].median()):.3f}**.\n\n"
                + rs.summary_markdown(ds_sv, r2_sv).split("\n", 2)[2])
     (out_dir / "residual_summary.md").write_text(md); print("\n" + md)
 
@@ -86,8 +91,8 @@ def main():
                                          end_year=a.end_year, demean="group")
     r_onset = np.where(land, np.nan, rs.correlation_map(resid, sst_onset)); del sst_onset
     print(f"loading JJA SST ({window}-yr running mean) ...")
-    sst_conc, _ = load_jja_sst_demeaned(paths.CESM2LE_SST_MONTHLY, start_year=a.start_year,
-                                        end_year=a.end_year, demean="group", sst_window=window)
+    sst_conc, _ = load_jja_sst_demeaned(paths.CESM2LE_SST_MONTHLY, start_year=a.start_year + offset,
+                                        end_year=a.end_year + offset, demean="group", sst_window=window)   # decade t+offset …
     r_conc = np.where(land, np.nan, rs.correlation_map(resid, sst_conc)); del sst_conc
     xr.Dataset({"r_onset": (("lat", "lon"), r_onset), "r_conc": (("lat", "lon"), r_conc)},
                coords={"lat": lat, "lon": lon}).to_netcdf(out_dir / "residual_corr_maps.nc")
