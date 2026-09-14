@@ -25,9 +25,16 @@ def polar_axes(fig, pos):
 
 
 def polar_map(ax, tlat, tlon, data, cmap, vmin, vmax, label=None):
-    kw = dict(transform=ccrs.PlateCarree()) if HAS_CARTOPY else {}
-    d = np.ma.masked_invalid(data)
-    m = ax.pcolormesh(tlon, tlat, d, cmap=cmap, vmin=vmin, vmax=vmax, shading="auto", rasterized=True, **kw)
+    """pcolormesh on the CICE tripolar grid: project the corners ourselves so cartopy does not try to wrap them."""
+    d = np.ma.masked_invalid(np.where(tlat >= 58, data, np.nan))
+    if HAS_CARTOPY:
+        xyz = ax.projection.transform_points(ccrs.PlateCarree(), np.asarray(tlon), np.asarray(tlat))
+        x, y = xyz[..., 0], xyz[..., 1]
+        bad = ~np.isfinite(x) | ~np.isfinite(y)
+        x = np.where(bad, 0.0, x); y = np.where(bad, 0.0, y); d = np.ma.masked_where(bad, d)
+        m = ax.pcolormesh(x, y, d, cmap=cmap, vmin=vmin, vmax=vmax, shading="nearest", rasterized=True)
+    else:
+        m = ax.pcolormesh(tlon, tlat, d, cmap=cmap, vmin=vmin, vmax=vmax, shading="nearest", rasterized=True)
     if label:
         plt.colorbar(m, ax=ax, orientation="horizontal", pad=0.04, fraction=0.05, label=label)
     return m
