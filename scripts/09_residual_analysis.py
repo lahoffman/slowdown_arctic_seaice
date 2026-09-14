@@ -61,6 +61,17 @@ def main():
     resid, r2_pooled = rs.pooled_residual(trend, sie_anom)
     ds.to_netcdf(out_dir / "residual_skill.nc")
     md = rs.summary_markdown(ds, r2_pooled)
+
+    # step 8.5: sea-ice volume as a second state variable, if 01 --variable hi has been run
+    siv_anom = bl.load_siv_anomaly(paths.CESM2LE_AICE_DIR / "metrics", years, demean="group")
+    if siv_anom is not None:
+        ds_v = rs.residual_skill(trend, siv_anom, idx_onset, idx_conc, years)          # volume alone
+        ds_sv = rs.residual_skill(trend, sie_anom, idx_onset, idx_conc, years, extra_state={"siv_anom": siv_anom})
+        _, r2_sv = rs.pooled_residual(trend, sie_anom, siv_anom)
+        ds_sv.to_netcdf(out_dir / "residual_skill_sie_siv.nc")
+        md += (f"\n## With September sea-ice volume (step 8.5)\n\nStage-1 test R² (median): SIE {float(ds['r2_sie'].median()):.3f}, "
+               f"volume alone {float(ds_v['r2_sie'].median()):.3f}, SIE + volume **{float(ds_sv['r2_sie'].median()):.3f}**.\n\n"
+               + rs.summary_markdown(ds_sv, r2_sv).split("\n", 2)[2])
     (out_dir / "residual_summary.md").write_text(md); print("\n" + md)
 
     if a.no_maps:

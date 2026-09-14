@@ -314,3 +314,43 @@ def batch_process_monthly_files(
     print("\n" + "="*70)
     print("Batch processing complete!")
     print("="*70)
+
+
+def calculate_sea_ice_volume(hi_file: str, tarea_file: str, lat_threshold: float = 50.0,
+                             hi_var: str = 'hi', save_output: Optional[str] = None) -> np.ndarray:
+    """
+    Northern Hemisphere sea ice volume from grid-cell mean thickness: Σ hi · tarea.
+
+    Args:
+        hi_file: monthly ``hi`` file (m, CICE grid-cell mean = volume per cell area).
+        tarea_file: file with ``tarea`` (cm²) and ``TLAT``.
+        lat_threshold: cells with TLAT >= this are summed.
+    Returns:
+        volume in 10³ km³, same leading dims as ``hi``.
+    """
+    ds_hi, ds_grid = xr.open_dataset(hi_file), xr.open_dataset(tarea_file)
+    if hi_var not in ds_hi:
+        hi_var = hi_var + '_mon'
+    hi = np.nan_to_num(ds_hi[hi_var].values.astype(np.float64))
+    tarea = ds_grid['tarea'].values
+    lat = ds_grid['TLAT'].values if 'TLAT' in ds_grid else ds_grid['lat'].values
+    w = np.where(lat >= lat_threshold, tarea, 0.0)                    # cm²
+    sp = tuple(range(hi.ndim - 2, hi.ndim))
+    vol = np.sum(hi * w, axis=sp) * 1e-4 / 1e9 / 1e3                  # m·cm² → m³ → km³ → 10³ km³
+    ds_hi.close(); ds_grid.close()
+    if save_output:
+        _save_metric(vol, save_output, 'sivoln', 'Northern Hemisphere sea ice volume', '10^3 km^3')
+    return vol
+
+
+def batch_process_volume_files(hi_dir: str, tarea_file: str, output_dir: str, member_label: str = 'first50members',
+                               months: list = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+                                               'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']) -> None:
+    """Sea ice volume for every monthly ``hi`` file → sivoln_{member_label}_{MON}.nc."""
+    from pathlib import Path
+    out = Path(output_dir); out.mkdir(parents=True, exist_ok=True)
+    for month in months:
+        files = list(Path(hi_dir).glob(f"hi_cesmle_{member_label}_mon_{month}_*.nc"))
+        if not files:
+            print(f"  ⚠ no hi file for {month} ({member_label})"); continue
+        calculate_sea_ice_volume(str(files[0]), tarea_file, save_output=str(out / f"sivoln_{member_label}_{month}.nc"))

@@ -52,6 +52,10 @@ BASELINE_FEATURES: Dict[str, List[str]] = {
     "logit_sie_pacific":    ["sie_anom", "nino34", "ipo"],
     "logit_sie_year":       ["sie_anom", "yearclim"],
     "logit_all_scalars":    ["sie_anom", "arctic", "nino34", "ipo", "yearclim"],
+    # sea-ice volume (step 8.5; skipped automatically when sivoln_* files are absent)
+    "logit_siv":            ["siv_anom"],
+    "logit_sie_siv":        ["sie_anom", "siv_anom"],
+    "logit_sie_siv_pacific": ["sie_anom", "siv_anom", "nino34", "ipo"],
 }
 
 
@@ -86,6 +90,15 @@ def load_sie_anomaly(metrics_dir: Path, years: np.ndarray, month: str = "SEP",
         raise ValueError("SIE years do not cover the requested onset years.")
     sie = sie_all[:, idx]
     return sie, sie - group_mean_trends(sie, demean)
+
+
+def load_siv_anomaly(metrics_dir: Path, years: np.ndarray, month: str = "SEP", demean: str = "group"):
+    """Sea-ice volume anomaly (10³ km³) at onset, or None if the sivoln_* files are missing."""
+    try:
+        _, siv_anom = load_sie_anomaly(metrics_dir, years, month=month, variable="siv", demean=demean)
+    except FileNotFoundError:
+        return None
+    return siv_anom
 
 
 def load_climate_indices_jja(indices_dir: Path, start_year: int, end_year: int

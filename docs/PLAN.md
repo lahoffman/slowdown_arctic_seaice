@@ -72,7 +72,8 @@ SI numbering (v2): S1 definition · S2 pooled σ/cap · S3 forcing groups · S4 
 - [~] 8.1 Residual on baselines (`09_residual_analysis.py`, no training): trend anomaly ~ SIE(t), then residual ~ indices at onset vs averaged over the trend decade; residual–SST correlation maps. *Code done; run on profx.* Read-out: concurrent ΔR² ≳ 0.05 → 8.2 is worth it.
 - [~] 8.2 Concurrent-decade CNN: `03 --sst-window 10 --aux sie_anom --tag rel_concurrent` → `run_retrain.sh rel_concurrent` → `run_postprocess.sh rel_concurrent`. *Code done (`sst_window` in `load_jja_sst_demeaned`, `03`, obs input); one overnight retrain.* Read-out: Pacific occlusion drop O(0.03–0.05) → "concurrent modulation, no predictability"; ≈ 0 → clean negative.
 - [ ] 8.3 Pacific-sector September SIE as target (Chukchi/Beaufort/E. Siberian) — only if 8.1/8.2 show a Pacific signal. Needs sector SIE from `aice` × `tarea`.
-- [ ] 8.4 Training tweak for new tags: `start_from_epoch=5`, monitor `val_auprc`, patience 15 (`src/cnn/train.py`). Existing tags not retrained.
+- [~] 8.5 Sea-ice thickness → NH volume as a second ice-state scalar (`01_cesm2le_preprocessing.py --variable hi`; `sivoln_*.nc`; `siv_anom` picked up automatically by `07_baselines.py` and `09_residual_analysis.py`). *Code done; download pending (~same size as aice).* Read-out: SIE + volume R² ≫ 0.28 → the follow-up paper's opening result; this paper gets one Discussion sentence. Barents–Kara OHC deferred (needs ocean TEMP).
+- [x] 8.4 Training tweak for new tags: `start_from_epoch=5`, monitor `val_auprc`, patience 15 (`src/cnn/train.py`). Existing tags not retrained.
 
 ## Optional / future work
 

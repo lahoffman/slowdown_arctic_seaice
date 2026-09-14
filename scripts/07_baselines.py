@@ -99,6 +99,9 @@ def main():
     fields = {"sie": sie, "sie_anom": sie_anom}
     fields.update(bl.load_climate_indices_jja(paths.CESM2LE_CLIMATE_INDICES_DIR,
                                               args.start_year, args.end_year))
+    siv_anom = bl.load_siv_anomaly(paths.CESM2LE_AICE_DIR / "metrics", years, month=args.month, demean=args.demean)
+    if siv_anom is not None:
+        fields["siv_anom"] = siv_anom
     print(f"  labels {labels.shape}  prevalence {labels.mean():.3f}  "
           f"fields: {sorted(fields)}")
     print("  slowdown frequency by decade and forcing group (cmip6 = members 0-49, smbb = 50-99):")

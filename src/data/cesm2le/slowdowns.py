@@ -116,7 +116,7 @@ def load_sie_monthly_files(
     member_groups : list of str, optional
         Ensemble groups to concatenate (default: ['first50', 'last50'])
     variable : str, optional
-        'sie' for sea ice extent (default) or 'sia' for sea ice area
+        'sie' for sea ice extent (default), 'sia' for sea ice area, 'siv' for volume (10³ km³)
     start_year : int, optional
         First year in the dataset (default: 1850)
     end_year : int, optional
@@ -137,7 +137,7 @@ def load_sie_monthly_files(
     data_dir = Path(data_dir)
     years = np.arange(start_year, end_year + 1)
 
-    prefix = 'siextentn' if variable == 'sie' else 'siarean'
+    prefix = {'sie': 'siextentn', 'sia': 'siarean', 'siv': 'sivoln'}[variable]
     group_arrays = []
 
     for group in member_groups:

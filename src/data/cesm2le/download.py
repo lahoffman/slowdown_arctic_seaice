@@ -55,6 +55,11 @@ VARIABLE_CONFIG = {
         'url_path': 'ice/proc/tseries/month_1/aice',
         'var_name': 'aice'
     },
+    'HI': {                                   # grid-cell mean ice thickness (m) = volume per cell area
+        'component': 'cice.h',
+        'url_path': 'ice/proc/tseries/month_1/hi',
+        'var_name': 'hi'
+    },
     'TREFHT': {
         'component': 'cam.h0',
         'url_path': 'atm/proc/tseries/month_1/TREFHT',

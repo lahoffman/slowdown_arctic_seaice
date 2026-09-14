@@ -175,6 +175,11 @@ CESM2LE_AICE_MONTHLY = {
     'last50':  str(CESM2LE_AICE_DIR / 'mon' / 'aice_cesmle_last50members_mon_{month}_199001-210012.nc'),
 }
 # Any raw CICE file: carries TLAT / TLONG / tarea for the ice grid
+CESM2LE_HI_DIR = CESM2LE_DIR / 'hi'                     # sea-ice thickness (step 8.5): raw/, yearmon/, mon/
+CESM2LE_HI_MONTHLY = {
+    'first50': str(CESM2LE_HI_DIR / 'mon' / 'hi_cesmle_first50members_mon_{month}_199001-210012.nc'),
+    'last50':  str(CESM2LE_HI_DIR / 'mon' / 'hi_cesmle_last50members_mon_{month}_199001-210012.nc'),
+}
 CESM2LE_CICE_GRID_FILE = CESM2LE_AICE_DIR / 'raw' / 'b.e21.BHISTcmip6.f09_g17.LE2-1001.001.cice.h.aice.199001-199912.nc'
 # JJA ice-cover mask on the SST (atmosphere) grid, output of scripts/02_cesm2le_icemask.py (step 1.6)
 CESM2LE_ICEMASK_JJA = CESM2LE_AICE_DIR / 'icemask' / 'aice_jja_atmgrid_199001-210012.nc'

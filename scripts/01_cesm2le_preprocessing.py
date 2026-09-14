@@ -31,6 +31,9 @@ python scripts/01_cesm2le_preprocessing.py --variable aice --skip-download
 # Only compute sea ice metrics from existing monthly AICE files
 python scripts/01_cesm2le_preprocessing.py --variable aice --metrics-only
 
+# Sea-ice thickness → NH volume (step 8.5; not part of 'all')
+python scripts/01_cesm2le_preprocessing.py --variable hi
+
 # Dry-run: print download commands without executing them
 python scripts/01_cesm2le_preprocessing.py --variable all --dry-run
 
@@ -60,7 +63,7 @@ from src.data.cesm2le import (
     process_cesmle_variable,
     calculate_annual_mean,
 )
-from src.data.cesm2le.metrics import batch_process_monthly_files
+from src.data.cesm2le.metrics import batch_process_monthly_files, batch_process_volume_files
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +100,18 @@ def _aice_combined_path(group: str) -> Path:
 def _aice_monthly_dir() -> Path:
     """Directory for per-month AICE files."""
     return paths.CESM2LE_AICE_DIR / 'mon'
+
+
+def _hi_raw_dir() -> Path:
+    return paths.CESM2LE_HI_DIR / 'raw'
+
+
+def _hi_combined_path(group: str) -> Path:
+    return paths.CESM2LE_HI_DIR / 'yearmon' / f'hi_cesmle_{group}members_mon_199001-210012.nc'
+
+
+def _hi_monthly_dir() -> Path:
+    return paths.CESM2LE_HI_DIR / 'mon'
 
 
 def _metrics_dir() -> Path:
@@ -306,6 +321,32 @@ def compute_sea_ice_metrics(member_groups: list) -> None:
 
 
 # ---------------------------------------------------------------------------
+# HI (sea-ice thickness → volume) processing, step 8.5
+# ---------------------------------------------------------------------------
+
+def download_hi(member_groups: list, dry_run: bool = False) -> None:
+    """Download raw grid-cell-mean ice thickness (hi) chunks."""
+    print('\n' + '=' * 70); print('STEP 4a  —  Download raw HI data from UCAR'); print('=' * 70)
+    raw_dir = _hi_raw_dir(); raw_dir.mkdir(parents=True, exist_ok=True)
+    download_raw_data(variable='HI', output_dir=str(raw_dir), member_groups=member_groups, dry_run=dry_run)
+
+
+def process_hi(member_groups: list) -> None:
+    """Combine raw HI chunks, split by month, and compute NH sea ice volume per month."""
+    print('\n' + '=' * 70); print('STEP 4b  —  Process HI (combine + separate by month + volume)'); print('=' * 70)
+    for group in member_groups:
+        combined = _hi_combined_path(group); combined.parent.mkdir(parents=True, exist_ok=True)
+        combine_ensemble_members(variable='HI', raw_data_path=str(_hi_raw_dir()), output_path=str(combined),
+                                 member_group=group, component='cice', frequency='h')
+        _hi_monthly_dir().mkdir(parents=True, exist_ok=True)
+        separate_by_month(combined_file=str(combined), output_dir=str(_hi_monthly_dir()), variable='HI',
+                          member_label=f'{group}members')
+        batch_process_volume_files(hi_dir=str(_hi_monthly_dir()), tarea_file=TAREA_FILE,
+                                   output_dir=str(_metrics_dir()), member_label=f'{group}members')
+    print('\n✓ HI processing complete — sivoln_*.nc in', _metrics_dir())
+
+
+# ---------------------------------------------------------------------------
 # TREF processing
 # ---------------------------------------------------------------------------
 
@@ -377,7 +418,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         '--variable', '-v',
-        choices=['tref','sst', 'aice', 'all'],
+        choices=['tref', 'sst', 'aice', 'hi', 'all'],
         default='all',
         help='Which variable(s) to process (default: all).',
     )
@@ -425,6 +466,7 @@ def main() -> None:
     run_sst  = args.variable in ('sst',  'all')
     run_aice = args.variable in ('aice', 'all')
     run_tref = args.variable in ('tref', 'all')
+    run_hi   = args.variable == 'hi'            # not part of 'all': only needed for step 8.5
 
     print('\n' + '=' * 70)
     print('CESM2-LE Preprocessing Pipeline')
@@ -460,6 +502,15 @@ def main() -> None:
 
         if not args.dry_run:
             compute_sea_ice_metrics(member_groups=args.member_groups)
+
+    # ------------------------------------------------------------------
+    # HI → sea ice volume
+    # ------------------------------------------------------------------
+    if run_hi:
+        if not args.skip_download:
+            download_hi(member_groups=args.member_groups, dry_run=args.dry_run)
+        if not args.dry_run:
+            process_hi(member_groups=args.member_groups)
 
     # ------------------------------------------------------------------
     # TREF
