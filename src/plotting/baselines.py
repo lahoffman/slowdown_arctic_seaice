@@ -20,6 +20,7 @@ LABELS = {
     "logit_sie_arctic": "SIE anomaly + Arctic SST", "logit_sie_nino34": "SIE anomaly + Niño 3.4",
     "logit_sie_ipo": "SIE anomaly + IPO", "logit_sie_pacific": "SIE anomaly + Niño 3.4 + IPO",
     "logit_sie_year": "SIE anomaly + onset year", "logit_all_scalars": "all scalar predictors",
+    "logit_siv": "sea-ice volume", "logit_sie_siv": "SIE anomaly + volume", "logit_sie_siv_pacific": "SIE + volume + Niño 3.4 + IPO",
     "cnn_median": "CNN (median of 5 seeds)",
 }
 from . import style as st
