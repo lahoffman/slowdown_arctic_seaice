@@ -78,6 +78,9 @@ SI numbering (v2): S1 definition · S2 pooled σ/cap · S3 forcing groups · S4 
 - [x] 8.6 Interannual + onset-in-window check run. *Result: Pacific bridge present with the model sign (r ≈ −0.1…−0.15, 2 % of year-ahead variance); **trend-on-SIE(t) R² 0.28 → 0.075 → 0.04 for windows starting t, t+1, t+2** — the ice-state result is ¾ arithmetic.*
 - [~] 8.9 **Offset labels** — residual analysis run: *ice 0.075, + volume 0.087, + IPO at onset +0.028, concurrent ≈ 0 → ≈ 11 % of the following decade's trend variance is foreseeable.* Remaining: (`02 --trend-offset 1`, onsets 1990–2029): rebuild baselines (`07 --tag off1`), residual analysis, then decide CNN retrains (`base`, warm-started `aux`) on this target. Supersedes `rel_aux_ws` / `rel_concurrent` runs.
 - [-] 8.10 `rel_concurrent` subset uninterpretable (ran to the epoch cap under the AUPRC rule); stopping rule reverted to val_loss + min 5 epochs.
+- [~] 8.12 Thickness *pattern* as predictor (`09_thickness_maps.py --labels-file $LBL1 --month SEP|MAR`): hi on the CICE grid north of 60°N at onset → corr maps with the offset trend (raw and after SIE), EOFs, sector volumes; out-of-sample R²/AUROC of SIE + pan volume / + sectors / + 5–20 PCs. *Code done.* Read-out: if SIE + PCs or + sectors clears ~0.15, thickness *maps* carry memory that scalars miss → CNN on hi maps (`aice`-style nearest regrid exists) is the follow-up; if ≈ 0.09, the ice interior adds nothing at pan-Arctic decadal scale and paper two closes.
+- [~] 8.11 RILE vs slowdown figure: `09_rile_compare.py` after the six `07 --label-var` runs (definition verified: riles = z < −1σ).
+- [~] 5.3b Multi-method XAI (`05b_xai_compare.py`), see 5.3.
 - [x] 8.4 Training tweak for new tags: `start_from_epoch=5`, monitor `val_auprc`, patience 15 (`src/cnn/train.py`). Existing tags not retrained.
 
 ## Phase 9 — AIES manuscript (decided 2026-09-14; GRL manuscript kept as backup in `manuscript/`)
