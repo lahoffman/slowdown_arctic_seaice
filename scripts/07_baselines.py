@@ -67,6 +67,8 @@ def parse_args():
     p.add_argument("--no-fig", action="store_true", help="skip the summary figure")
     p.add_argument("--variable", default="sie", choices=["sie", "sia"])
     p.add_argument("--month", default="SEP")
+    p.add_argument("--label-var", default="slowdown", choices=["slowdown", "riles"],
+                   help="which binary label in the file to score (riles = rapid-ice-loss tail, z < −nσ)")
     p.add_argument("--labels-file", type=Path, default=None,
                    help="slowdown label NetCDF (default: original 02_cesm2le_slowdowns output)")
     p.add_argument("--tag", default=None,
@@ -92,7 +94,7 @@ def main():
     print(f"  CNN predictions: {CNN_PRED_DIR}  (sie_anom demean={args.demean})\n")
 
     # 1. labels + scalar fields on the (nens, nyear) grid -----------------------
-    labels, years = bl.load_labels(label_file, args.start_year, args.end_year)
+    labels, years = bl.load_labels(label_file, args.start_year, args.end_year, var=args.label_var)
     sie, sie_anom = bl.load_sie_anomaly(paths.CESM2LE_AICE_DIR / "metrics", years,
                                         month=args.month, variable=args.variable,
                                         demean=args.demean)

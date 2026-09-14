@@ -63,11 +63,11 @@ BASELINE_FEATURES: Dict[str, List[str]] = {
 # Loading
 # =============================================================================
 
-def load_labels(slowdown_file: Path, start_year: int, end_year: int
+def load_labels(slowdown_file: Path, start_year: int, end_year: int, var: str = "slowdown"
                 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Binary slowdown labels (nens, nyear) and onset years from a slowdown file."""
+    """Binary labels (nens, nyear) and onset years from a label file; ``var`` 'slowdown' or 'riles'."""
     with xr.open_dataset(slowdown_file) as ds:
-        sub = ds["slowdown"].sel(nyr=slice(start_year, end_year))
+        sub = ds[var].sel(nyr=slice(start_year, end_year))
         return sub.values.astype(np.int8), sub["nyr"].values.astype(int)
 
 

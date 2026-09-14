@@ -72,13 +72,40 @@ SI numbering (v2): S1 definition · S2 pooled σ/cap · S3 forcing groups · S4 
 - [~] 8.1 Residual on baselines (`09_residual_analysis.py`, no training): trend anomaly ~ SIE(t), then residual ~ indices at onset vs averaged over the trend decade; residual–SST correlation maps. *Code done; run on profx.* Read-out: concurrent ΔR² ≳ 0.05 → 8.2 is worth it.
 - [~] 8.2 Concurrent-decade CNN: `03 --sst-window 10 --aux sie_anom --tag rel_concurrent` → `run_retrain.sh rel_concurrent` → `run_postprocess.sh rel_concurrent`. *Code done (`sst_window` in `load_jja_sst_demeaned`, `03`, obs input); one overnight retrain.* Read-out: Pacific occlusion drop O(0.03–0.05) → "concurrent modulation, no predictability"; ≈ 0 → clean negative.
 - [ ] 8.3 Pacific-sector September SIE as target (Chukchi/Beaufort/E. Siberian) — only if 8.1/8.2 show a Pacific signal. Needs sector SIE from `aice` × `tarea`.
-- [~] 8.5 Sea-ice thickness → NH volume as a second ice-state scalar (`01_cesm2le_preprocessing.py --variable hi`; `sivoln_*.nc`; `siv_anom` picked up automatically by `07_baselines.py` and `09_residual_analysis.py`). *Code done; download pending (~same size as aice).* Read-out: SIE + volume R² ≫ 0.28 → the follow-up paper's opening result; this paper gets one Discussion sentence. Barents–Kara OHC deferred (needs ocean TEMP).
+- [x] 8.5 Sea-ice volume: *SEP or MAR volume adds ΔR² ≈ 0.01 to extent (0.075 → 0.087) — initial ice conditions of any kind foresee ~9 %.* Was: Sea-ice thickness → NH volume as a second ice-state scalar (`01_cesm2le_preprocessing.py --variable hi`; `sivoln_*.nc`; `siv_anom` picked up automatically by `07_baselines.py` and `09_residual_analysis.py`). *Code done; download pending (~same size as aice).* Read-out: SIE + volume R² ≫ 0.28 → the follow-up paper's opening result; this paper gets one Discussion sentence. Barents–Kara OHC deferred (needs ocean TEMP).
 - [~] 8.7 CNN regression head on the continuous trend anomaly (`04_cesm2le_cnn_regress.py --tag rel_aux --splits 2 5 7 --n-runs 2`): *code done.* Scored as test R² vs OLS on SIE / SIE + Pacific on the same samples.
 - [~] 8.8 **Bug: aux scalar frozen at lr 1e-4 → `rel_aux` was not a fair test.** Fix: warm-start output layer at the scalar logistic fit (`build_cnn(aux_init=…)`, default in `04`). *To do:* `rel_aux_ws` subset (splits 2 5 7) → full retrain + postprocess if it moves; then `rel_openwater`/`rel_lag1`/`rel_concurrent` with the fix. Decision gate 1.8 re-opened for this one question.
 - [x] 8.6 Interannual + onset-in-window check run. *Result: Pacific bridge present with the model sign (r ≈ −0.1…−0.15, 2 % of year-ahead variance); **trend-on-SIE(t) R² 0.28 → 0.075 → 0.04 for windows starting t, t+1, t+2** — the ice-state result is ¾ arithmetic.*
-- [~] 8.9 **Offset labels** (`02 --trend-offset 1`, onsets 1990–2029): rebuild baselines (`07 --tag off1`), residual analysis, then decide CNN retrains (`base`, warm-started `aux`) on this target. Supersedes `rel_aux_ws` / `rel_concurrent` runs.
+- [~] 8.9 **Offset labels** — residual analysis run: *ice 0.075, + volume 0.087, + IPO at onset +0.028, concurrent ≈ 0 → ≈ 11 % of the following decade's trend variance is foreseeable.* Remaining: (`02 --trend-offset 1`, onsets 1990–2029): rebuild baselines (`07 --tag off1`), residual analysis, then decide CNN retrains (`base`, warm-started `aux`) on this target. Supersedes `rel_aux_ws` / `rel_concurrent` runs.
 - [-] 8.10 `rel_concurrent` subset uninterpretable (ran to the epoch cap under the AUPRC rule); stopping rule reverted to val_loss + min 5 epochs.
 - [x] 8.4 Training tweak for new tags: `start_from_epoch=5`, monitor `val_auprc`, patience 15 (`src/cnn/train.py`). Existing tags not retrained.
+
+## Phase 9 — AIES manuscript (decided 2026-09-14; GRL manuscript kept as backup in `manuscript/`)
+
+- [ ] 9.1 New manuscript from the AMS LaTeX package (`~/Downloads/AMS LaTeX Package 6`, `ametsocV6.2.cls`) in `manuscript_aies/` (private repo like `manuscript/`); reuse Intro/Methods text from the GRL draft; figure plan in `docs/FIGURES.md`; outline to follow in `docs/AIES_OUTLINE.md`.
+- [ ] 9.2 Give the new diagnostics `make_figure.py` ids (`occlusion`, `learning_curves` exist; add `residual`, `interannual`, `regression`, `arithmetic_synthetic`, `aux_frozen_synthetic`) and a `sync_figures.sh` for the new repo.
+- [ ] 9.3 Zach: send offset figure + panel (d) + the 7/3/0 ledger; ask GRL vs AIES.
+
+### Runs still pending (all on the offset labels `off1`)
+- [ ] `07_baselines.py --labels-file $LBL1 --tag off1` — binary table incl. `logit_siv*` rows (minutes).
+- [ ] `03 … --tag off1_aux` + `04_cesm2le_cnn_regress.py --tag off1_aux --splits 2 5 7 --n-runs 2` — is the map empty nonlinearly? (1 h GPU).
+- [ ] If the regression subset is ≈ OLS: one full classification CNN on `off1` (`base` + warm-started `aux`, 45 each) for the paper's LRP/occlusion/obs figures → `run_retrain.sh off1_base off1_aux` → `run_postprocess.sh`. Kill/ignore `rel_concurrent`.
+- [ ] `09_sensitivity_sweep.py` with `--trend-offset 1` (option to add) → S17 on honest labels.
+- [ ] 6.3 vote-fraction recount + Fig. 4 on the final CNN; 6.7 obs LRP.
+- [ ] RILE variant (3-yr and 5-yr windows, negative tail) — "for giggles", 8.11 below.
+- [ ] Two small synthetic figures (arithmetic; frozen scalar) — `scripts/10_synthetic_checks.py`.
+
+### 8.11 RILE / short-window variant
+```
+python scripts/02_cesm2le_slowdowns_relative.py --window 3 5 --trend-offset 1 --no-fig
+for w in 3 5; do
+  L=$SLOWDOWN_DATA_ROOT/cesm2le/slowdowns/cesm2le_sie_slowdown_relative_SEP_w${w}_s1_group_off1_1990-2100.nc
+  python scripts/07_baselines.py --labels-file $L --label-var riles    --demean group --start-year 1990 --end-year 2029 --tag rile_w${w}_off1 --no-fig
+  python scripts/07_baselines.py --labels-file $L --label-var slowdown --demean group --start-year 1990 --end-year 2029 --tag slow_w${w}_off1 --no-fig
+  python scripts/09_residual_analysis.py --labels-file $L --end-year 2029 --no-maps      # continuous, sign-agnostic
+done
+```
+Read-out: short windows are dominated by interannual noise; expect the ice-state R² to *rise* (persistence matters more over 3 yr than 10) and the Pacific increment to stay ≈ 0.02–0.03. Both tails scored; the continuous analysis covers RILEs and slowdowns at once.
 
 ## Optional / future work
 
