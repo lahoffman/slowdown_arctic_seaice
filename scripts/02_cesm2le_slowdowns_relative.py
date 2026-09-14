@@ -38,11 +38,12 @@ from src.plotting import style as st
 
 def relative_label_file(variable: str, month: str, window: int, n_sigma: float,
                         demean: str, start_year: int = 1990, end_year: int = 2100,
-                        sigma_mode: str = "pooled") -> Path:
+                        sigma_mode: str = "pooled", trend_offset: int = 0) -> Path:
     """Path of a relative-label file (mirrors paths.cesm2le_slowdown_file naming)."""
     mode = "" if sigma_mode == "pooled" else f"_{sigma_mode}"
+    off = f"_off{trend_offset}" if trend_offset else ""
     return paths.CESM2LE_SLOWDOWNS_DIR / (
-        f"cesm2le_{variable}_slowdown_relative_{month}_w{window}_s{n_sigma:g}_{demean}{mode}"
+        f"cesm2le_{variable}_slowdown_relative_{month}_w{window}_s{n_sigma:g}_{demean}{mode}{off}"
         f"_{start_year}-{end_year}.nc")
 
 
@@ -64,6 +65,9 @@ def parse_args():
     p.add_argument("--pool-years", type=int, nargs=2, default=[1990, 2040])
     p.add_argument("--start-year", type=int, default=1990)
     p.add_argument("--end-year", type=int, default=2100)
+    p.add_argument("--trend-offset", type=int, default=0,
+                   help="label onset t with the trend of the window t+k…t+k+w−1 (default 0 = LB22 convention; "
+                        "1 keeps the onset year out of the fitted window, step 8.9)")
     p.add_argument("--no-fig", action="store_true", help="skip diagnostic figures")
     p.add_argument("--member", type=int, default=7, help="member highlighted in the figure")
     return p.parse_args()
@@ -90,11 +94,13 @@ def main():
             built = {}
             for mode in modes:
                 ds = rel.build_relative_dataset(sie, years, window=w, start_year=a.start_year,
+                                                trend_offset=a.trend_offset,
                                                 n_sigma=s, demean=a.demean,
                                                 pool_years=tuple(a.pool_years),
                                                 sigma_mode=mode)
                 out = relative_label_file(a.variable, a.month, w, s, a.demean,
-                                          a.start_year, a.end_year, sigma_mode=mode)
+                                          a.start_year, a.end_year, sigma_mode=mode,
+                                          trend_offset=a.trend_offset)
                 ds.to_netcdf(out)
                 built[mode] = ds
                 lab, yrs = ds["slowdown"].values, ds["nyr"].values

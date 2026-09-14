@@ -106,8 +106,8 @@ def parse_args() -> argparse.Namespace:
                         help='Do NOT initialise the output layer at the logistic fit on the scalar inputs '
                              '(default: warm start whenever the split has aux scalars; step 8.8).')
     parser.add_argument('--stopping', choices=['loss', 'auprc'], default='loss',
-                        help="Early-stopping rule: 'loss' = val_loss, patience 10 (original, tags rel_*); "
-                             "'auprc' = val AUPRC, patience 15, no stop before epoch 5 (Phase 8 tags).")
+                        help="Early-stopping rule: 'loss' = val_loss, patience 10, no stop before epoch 5 (default); "
+                             "'auprc' = val AUPRC, patience 15 (too noisy on ~70 positives; kept for reference).")
     parser.add_argument('--skip-existing', action='store_true',
                         help='Reuse a saved model instead of retraining it (resume after a crash).')
     return parser.parse_args()
@@ -124,8 +124,9 @@ def main() -> None:
     logs_dir = paths.LOGS_DIR / tag if tag else paths.LOGS_DIR
     use_aux = False if args.no_aux else None      # None = use if present
     train_config = {**TRAIN_CONFIG, 'num_epochs': args.epochs}
-    if args.stopping == 'auprc':
-        train_config.update(monitor='val_auprc', patience=15, min_epochs=5)
+    train_config.update(min_epochs=5)                       # never keep an epoch-1 coin flip (8.4)
+    if args.stopping == 'auprc':                             # noisy on ~70 positives; runs to the cap — not recommended
+        train_config.update(monitor='val_auprc', patience=15)
 
     print()
     print('=' * 70)

@@ -74,10 +74,19 @@ def relative_labels(trends_ens: np.ndarray, trend_years: np.ndarray,
 
 
 def build_relative_dataset(sie: np.ndarray, years: np.ndarray, window: int = 10,
-                           start_year: int = 1990, **kwargs) -> xr.Dataset:
-    """Trends + relative labels as a Dataset with the original file's variable names."""
+                           start_year: int = 1990, trend_offset: int = 0, **kwargs) -> xr.Dataset:
+    """
+    Trends + relative labels as a Dataset with the original file's variable names.
+
+    ``trend_offset`` k labels onset year t with the trend of the window t+k … t+k+window−1,
+    so predictors at t are strictly before the target (k = 0 is the LB22 convention, where
+    the onset value sits inside the fitted window and correlates with the slope by construction).
+    """
     trends_ens, trends_mean, trend_years = compute_decadal_trends_ensemble(
         sie, years, window=window, start_year=start_year)
+    if trend_offset:
+        trends_ens, trends_mean = trends_ens[:, trend_offset:], trends_mean[trend_offset:]
+        trend_years = trend_years[trend_offset:] - trend_offset          # onset year = window start − k
     lab = relative_labels(trends_ens, trend_years, **kwargs)
     ds = xr.Dataset(
         {
@@ -101,6 +110,7 @@ def build_relative_dataset(sie: np.ndarray, years: np.ndarray, window: int = 10,
         "sigma_mode": kwargs.get("sigma_mode", "pooled"),
         "pool_years": str(kwargs.get("pool_years", (1990, 2040))),
         "window": window,
+        "trend_offset": int(trend_offset),
         "groups": "cmip6: members 0-49, smbb: members 50-99",
     })
     ds["slowdown"].attrs["description"] = "1 = slowdown (trend anomaly > +n_sigma), 0 = normal"

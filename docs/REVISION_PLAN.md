@@ -305,6 +305,20 @@ scripts/run_retrain.sh rel_aux_ws && scripts/run_postprocess.sh rel_aux_ws      
 python scripts/04_cesm2le_cnn_regress.py --tag rel_aux --splits 2 5 7 --n-runs 2             # 8.7 subset (warm-started)
 ```
 
+**Step 8.6 result (2026-09-14, `results/interannual/interannual_summary.md`, figure `diagnostics/interannual_check.png`).** (a–b) CESM2-LE has the Pacific → September SIE bridge with the *model* sign — warm JJA Niño 3.4 / IPO ↔ low ice, per-member median r = −0.11 / −0.15, negative in 77 / 83 of 100 members, flat across 30-yr windows — i.e. opposite to Baxter et al.'s observed tropical-cooling → melt (the Topál & Ding / B&BW model–observation discrepancy, now shown in 100 members; panel (e) is the model's Ding/Baxter map). (c) Year-ahead SIE persistence R² 0.20; + Pacific indices 0.22 (ΔR² 0.015–0.019): the bridge is real and worth ~2 % of interannual variance. (d) **Onset-year-in-window: R² of the trend anomaly on SIE(t) = 0.276 (window t…t+9) → 0.075 (t+1…t+10) → 0.040 (t+2…t+11).** About three quarters of the "ice state predicts the decadal trend" result is the onset value sitting inside the fitted window (white noise gives 0.25 / 0.00 / 0.00). Genuine ice-state memory into the following decade is R² ≈ 0.07. Consequences: the strength of `logit_sie_anom` (AUROC 0.77), the CNN's Arctic reading, the Arctic occlusion drop, the v1 "warm Arctic SST precedes slowdowns" story, and LB22's GMST-at-onset framework all share this construction. **Decision: the paper's label moves to trend_offset = 1** (predictors at t, target strictly t+1 … t+10) and Phase 1 is re-run on it (baselines first, minutes; CNN only for `base` and warm-started `aux`).
+
+**Step 8.9 — Offset labels (`02_cesm2le_slowdowns_relative.py --trend-offset 1` → `…_group_off1_1990-2100.nc`; `build_relative_dataset(trend_offset=…)`, attr `trend_offset`).** Onset t is labelled with the window t+1 … t+10; pooled σ over onsets 1990–2040 as before; cap onsets at 2029 so the last window ends 2039. Every downstream script takes `--labels-file`, so nothing else changes. *Read-out (pre-registered):* `logit_sie_anom` AUROC expected ≈ 0.60–0.65; if no scalar or map predictor exceeds ≈ 0.65 the paper's headline is "decadal slowdowns are essentially unpredictable from the surface state at onset in CESM2-LE; the apparent predictability of onset-inclusive definitions is arithmetic". Sea-ice volume (8.5) is the one predictor that could still lift this.
+
+```
+python scripts/02_cesm2le_slowdowns_relative.py --trend-offset 1 --no-fig
+LBL1=$SLOWDOWN_DATA_ROOT/cesm2le/slowdowns/cesm2le_sie_slowdown_relative_SEP_w10_s1_group_off1_1990-2100.nc
+python scripts/07_baselines.py --labels-file $LBL1 --demean group --start-year 1990 --end-year 2029 --tag off1 --no-fig
+python scripts/09_residual_analysis.py --labels-file $LBL1 --end-year 2029
+python scripts/09_sensitivity_sweep.py  # (offset option to add if the sweep is repeated)
+```
+
+**Step 8.10 — `rel_concurrent` subset (split 2, 2 seeds): not interpretable.** AUROC 0.62 with small occlusion drops spread over every region; trained to the 50-epoch cap because the val-AUPRC stopping rule never fired (noisy on ~70 positives). Reverted: default stopping is `val_loss`, patience 10, `start_from_epoch=5`. Any further CNN runs use the offset labels and the warm start; `rel_concurrent`, `rel_aux_ws` as planned before 8.6 are superseded.
+
 **Training changes for 8.2/8.3 (from the learning-curve diagnosis):** `EarlyStopping(start_from_epoch=5)` and monitor `val_auprc` (`keras.metrics.AUC(curve="PR", name="auprc")` in `compile`), patience 15. Applied in `src/cnn/train.py` for new tags only; the four existing tags are not retrained for this.
 
 ---
