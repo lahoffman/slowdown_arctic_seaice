@@ -102,6 +102,9 @@ def parse_args() -> argparse.Namespace:
                         help='Ignore auxiliary scalars even if the split files have them.')
     parser.add_argument('--epochs', type=int, default=TRAIN_CONFIG['num_epochs'],
                         help=f"Max epochs (default {TRAIN_CONFIG['num_epochs']}; use 2 for a smoke test).")
+    parser.add_argument('--no-warm-start', action='store_true',
+                        help='Do NOT initialise the output layer at the logistic fit on the scalar inputs '
+                             '(default: warm start whenever the split has aux scalars; step 8.8).')
     parser.add_argument('--stopping', choices=['loss', 'auprc'], default='loss',
                         help="Early-stopping rule: 'loss' = val_loss, patience 10 (original, tags rel_*); "
                              "'auprc' = val AUPRC, patience 15, no stop before epoch 5 (Phase 8 tags).")
@@ -206,8 +209,15 @@ def main() -> None:
                 cw = compute_class_weights(y_tr, fract_weight=FRACT_WEIGHT)
                 print(f'    Class weights: {cw}')
 
-                # Build and train model
-                model = build_cnn(nx, ny, nch, rl2=RL2, drop=DROP, n_aux=n_aux)
+                # Build and train model (warm start at the scalar-only logistic fit, step 8.8)
+                aux_init = None
+                if n_aux and not args.no_warm_start:
+                    from sklearn.linear_model import LogisticRegression
+                    lr_fit = LogisticRegression(class_weight=cw).fit(x_tr[1], y_tr)
+                    aux_init = (lr_fit.coef_.ravel(), float(lr_fit.intercept_[0]))
+                    if run_idx == 0:
+                        print(f'    warm start: aux coef {np.round(aux_init[0], 3)}, intercept {aux_init[1]:.3f}')
+                model = build_cnn(nx, ny, nch, rl2=RL2, drop=DROP, n_aux=n_aux, aux_init=aux_init)
                 model, history = train_model(
                     model, x_tr, y_tr, x_va, y_va,
                     config=train_config,

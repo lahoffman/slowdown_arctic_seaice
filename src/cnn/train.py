@@ -196,14 +196,18 @@ def train_model(
     min_epochs   = cfg.get('min_epochs',    0)              # early stopping cannot fire before this
     focal_alpha  = cfg.get('focal_alpha',   0.75)
     focal_gamma  = cfg.get('focal_gamma',   2.0)
+    task         = cfg.get('task',          'classification')
 
+    if task == 'regression':                              # continuous target (step 8.7)
+        loss, metrics = keras.losses.Huber(delta=1.0), ['mae']
+        class_weights = None
+    else:
+        loss = keras.losses.BinaryFocalCrossentropy(alpha=focal_alpha, gamma=focal_gamma)
+        metrics = ['accuracy', keras.metrics.AUC(curve='PR', name='auprc')]
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=lr) if lr != 1e-3 else optimizer,
-        loss=keras.losses.BinaryFocalCrossentropy(
-            alpha=focal_alpha,
-            gamma=focal_gamma,
-        ),
-        metrics=['accuracy', keras.metrics.AUC(curve='PR', name='auprc')],
+        loss=loss,
+        metrics=metrics,
     )
 
     es_kw = dict(monitor=monitor, mode='max' if monitor.endswith('auprc') else 'min',

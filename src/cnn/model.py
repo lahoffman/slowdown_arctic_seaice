@@ -27,7 +27,7 @@ Authors: Lauren Hoffman  <lhoffma2@ucsc.edu>
 """
 
 import numpy as np
-from typing import Dict
+from typing import Tuple, Dict, Optional
 
 # Keras / TensorFlow imports are deferred to avoid import-time overhead when
 # only the metric functions are needed (e.g. during data processing steps).
@@ -115,6 +115,8 @@ def build_cnn(
     rl2: float = RL2,
     drop: float = DROP,
     n_aux: int = 0,
+    task: str = "classification",
+    aux_init: Optional[Tuple[np.ndarray, float]] = None,
 ) -> "Model":
     """
     Build the binary-classification CNN used for slowdown prediction.
@@ -131,7 +133,16 @@ def build_cnn(
         aux (n, n_aux)]``; the scalars bypass the convolutions and enter the
         final logistic layer alongside the flattened map features, so the
         map branch only has to learn what the scalars do not already explain.
+    task : {'classification', 'regression'}
+        Sigmoid output (slowdown probability) or a linear output for a
+        continuous target such as the standardised trend anomaly (step 8.7).
+    aux_init : (coef (n_aux,), intercept), optional
+        Warm start: the output layer is initialised at this linear fit on the
+        scalars (map weights zero), so training starts *at* the scalar baseline.
+        Without it, Adam at lr 1e-4 moves the scalar weight by only ~0.05 over
+        a whole run and the network cannot use the scalar (step 8.8).
     """
+    act = "sigmoid" if task == "classification" else None
     if not _TF_AVAILABLE:
         raise ImportError("TensorFlow is required to build the CNN model.")
 
@@ -151,10 +162,19 @@ def build_cnn(
     if n_aux > 0:
         aux_in = Input(shape=(n_aux,), name="aux_scalars")
         x = Concatenate(name="features_plus_aux")([x, aux_in])
-        output = Dense(1, activation='sigmoid')(x)
-        return Model(inputs=[inputs, aux_in], outputs=output)
+        head = Dense(1, activation=act, name="output")
+        output = head(x)
+        model = Model(inputs=[inputs, aux_in], outputs=output)
+        if aux_init is not None:
+            coef, intercept = aux_init
+            W, b = head.get_weights()
+            W[:] = 0.0
+            W[-n_aux:, 0] = np.asarray(coef, dtype=W.dtype)
+            b[:] = float(intercept)
+            head.set_weights([W, b])
+        return model
 
-    output = Dense(1, activation='sigmoid')(x)
+    output = Dense(1, activation=act)(x)
 
     return Model(inputs=inputs, outputs=output)
 
