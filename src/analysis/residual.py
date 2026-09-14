@@ -108,14 +108,14 @@ def correlation_map(resid: np.ndarray, sst: np.ndarray) -> np.ndarray:
         return (num / den).reshape(sst.shape[2:])
 
 
-def summary_markdown(ds: xr.Dataset, r2_pooled: float, n_events: Optional[int] = None) -> str:
+def summary_markdown(ds: xr.Dataset, r2_pooled: float, n_events: Optional[int] = None, window: int = 10) -> str:
     med = lambda a: float(np.nanmedian(a))
     lines = [f"# Residual analysis — trend anomaly beyond the ice state ({ds.attrs.get('state', 'sie_anom')})\n",
              f"Stage 1: trend anomaly ~ {ds.attrs.get('state', 'sie_anom')} at onset. Test R² median over 9 splits "
              f"**{med(ds['r2_sie']):.3f}** (range {float(ds['r2_sie'].min()):.3f}–{float(ds['r2_sie'].max()):.3f}); "
              f"pooled fit R² {r2_pooled:.3f}.\n",
              "Stage 2: residual ~ SST indices, test R² (median over splits). "
-             "`onset` = JJA of the onset year; `conc` = mean over the 10 JJA seasons of the trend window.\n",
+             f"`onset` = JJA of the onset year; `conc` = mean over the {window} JJA seasons of the trend window.\n",
              "| index set | R²(resid) onset | R²(resid) conc | ΔR² over SIE-only, onset | ΔR² over SIE-only, conc |",
              "|---|---|---|---|---|"]
     for s in ds["set"].values:

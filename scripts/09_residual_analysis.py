@@ -8,8 +8,8 @@ residual on the SST indices, either at onset or averaged over the trend decade
 (concurrent). Also maps the correlation of the residual with JJA SST at onset and
 with the decade-mean JJA SST. Baselines only — minutes, no GPU.
 
-Outputs: results/residual/residual_skill.nc, residual_summary.md,
-         FIGURES_DIR/diagnostics/residual_analysis.png
+Outputs: results/residual/w<window>_off<offset>/{residual_skill.nc, residual_summary.md, residual_corr_maps.nc},
+         FIGURES_DIR/diagnostics/residual_analysis_w<window>_off<offset>.png
 
 Usage:
   python scripts/09_residual_analysis.py
@@ -45,11 +45,12 @@ def parse_args():
 
 def main():
     a = parse_args()
-    out_dir = paths.RESULTS_DIR / "residual"; out_dir.mkdir(parents=True, exist_ok=True)
     years = np.arange(a.start_year, a.end_year + 1)
     with xr.open_dataset(a.labels_file) as ds:
         window = int(ds.attrs.get("window", 10)); offset = int(ds.attrs.get("trend_offset", 0))
         trend = ds["trend_anom"].sel(nyr=slice(a.start_year, a.end_year)).values.astype(float)
+    key = f"w{window}_off{offset}"                       # one output folder per label definition
+    out_dir = paths.RESULTS_DIR / "residual" / key; out_dir.mkdir(parents=True, exist_ok=True)
     _, sie_anom = bl.load_sie_anomaly(paths.CESM2LE_AICE_DIR / "metrics", years, demean="group")
     print(f"09  —  residual analysis  onsets {a.start_year}–{a.end_year}, window {window} yr, offset {offset}, "
           f"{np.isfinite(trend).sum()} member-years")
@@ -63,7 +64,7 @@ def main():
     ds = rs.residual_skill(trend, sie_anom, idx_onset, idx_conc, years)
     resid, r2_pooled = rs.pooled_residual(trend, sie_anom)
     ds.to_netcdf(out_dir / "residual_skill.nc")
-    md = rs.summary_markdown(ds, r2_pooled)
+    md = rs.summary_markdown(ds, r2_pooled, window=window)
 
     # step 8.5: sea-ice volume (one or more months) as extra ice-state scalars, if 01 --variable hi has been run
     for mon in a.siv_months:
@@ -76,7 +77,7 @@ def main():
         ds_sv.to_netcdf(out_dir / f"residual_skill_sie_siv{mon}.nc")
         md += (f"\n## With {mon} sea-ice volume (step 8.5)\n\nStage-1 test R² (median): SIE {float(ds['r2_sie'].median()):.3f}, "
                f"{mon} volume alone {float(ds_v['r2_sie'].median()):.3f}, SIE + {mon} volume **{float(ds_sv['r2_sie'].median()):.3f}**.\n\n"
-               + rs.summary_markdown(ds_sv, r2_sv).split("\n", 2)[2])
+               + rs.summary_markdown(ds_sv, r2_sv, window=window).split("\n", 2)[2])
     (out_dir / "residual_summary.md").write_text(md); print("\n" + md)
 
     if a.no_maps:
@@ -103,7 +104,7 @@ def main():
         from src.plotting import residual as plot, style as st
         st.paper_rc()
         plot.plot_residual(ds, trend, sie_anom, r_onset, r_conc, lat, lon,
-                           paths.FIGURES_DIR / "diagnostics" / "residual_analysis.png", window)
+                           paths.FIGURES_DIR / "diagnostics" / f"residual_analysis_{key}.png", window)
 
 
 if __name__ == "__main__":
