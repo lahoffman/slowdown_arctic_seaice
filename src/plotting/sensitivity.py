@@ -86,3 +86,37 @@ def plot_events(table: dict, cnn_rows: list, out_png) -> None:
         st.tidy(ax)
     fig.tight_layout(w_pad=2.5)
     st.save(fig, out_png)
+
+
+def plot_rile_vs_slowdown(data: dict, windows, models, names, out_png):
+    """Rows: AUROC, AUPRC. Columns: trend window. Slowdown (blue) vs RILE (orange) per scalar baseline; points = splits."""
+    cols = {"slowdown": st.C_ALL, "rile": st.C_ORIG}
+    fig, axes = plt.subplots(2, len(windows), figsize=(4.8 * len(windows), 8), sharey="row", squeeze=False)
+    for j, w in enumerate(windows):
+        for i, metric in enumerate(("AUROC", "AUPRC")):
+            ax = axes[i, j]
+            for k, tail in enumerate(("slowdown", "rile")):
+                ds = data.get((w, tail))
+                if ds is None:
+                    continue
+                ms = [m for m in models if m in ds.model.values]
+                y = np.arange(len(ms)) + (k - 0.5) * 0.3
+                v = ds["metric_value"].sel(metric=metric, model=ms).values          # (split, model)
+                for jj, m in enumerate(ms):
+                    ax.scatter(v[:, jj], np.full(v.shape[0], y[jj]), s=10, color=cols[tail], alpha=0.35)
+                ax.plot(np.nanmedian(v, axis=0), y, "o", color=cols[tail], ms=6, label=tail if (i == 0 and j == 0) else None)
+                if metric == "AUROC":
+                    ax.axvline(0.5, color=st.MUTED, lw=0.8)
+                elif "random_prevalence" in ds.model.values:
+                    ax.axvline(float(ds["metric_median"].sel(metric="AUPRC", model="random_prevalence")), color=cols[tail], lw=0.8, ls=":")
+            ax.set_yticks(range(len(models)))
+            if j == 0:
+                ax.set_yticklabels([names[m] for m in models])
+                if i == 0:
+                    ax.invert_yaxis()
+            ax.set_xlabel(f"test {metric}"); st.tidy(ax)
+            if i == 0:
+                ax.set_title(f"{w}-yr trend, window starts t+1", loc="left", weight="bold")
+    axes[0, 0].legend(frameon=False, loc="lower right", title="tail (±1σ)")
+    fig.tight_layout()
+    st.save(fig, out_png)

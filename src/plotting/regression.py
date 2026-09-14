@@ -26,7 +26,7 @@ def plot_regression(ds: xr.Dataset, pred_dir: Path, out_png):
     ax.axhline(0, color=st.MUTED, lw=0.7)
     ax.set_xticks(range(len(splits))); ax.set_xticklabels([f"split {k}" for k in splits])
     ax.set_ylabel("test R² of trend anomaly"); ax.legend(frameon=False, loc="lower right")
-    ax.set_title("(a) map + scalar CNN vs linear ice-state references", loc="left", weight="bold"); st.tidy(ax)
+    ax.set_title("(a) CNN vs linear ice-state references", loc="left", weight="bold"); st.tidy(ax)
 
     ax = axes[1]
     best = ds.isel(model=int(np.argmax(ds["r2_cnn"].values)))
@@ -38,7 +38,7 @@ def plot_regression(ds: xr.Dataset, pred_dir: Path, out_png):
     ax.plot([-lim, lim], [-lim, lim], color=st.MUTED, lw=0.8); ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim)
     ax.set_xlabel("true trend anomaly [M km² yr⁻¹]"); ax.set_ylabel("predicted [M km² yr⁻¹]")
     ax.legend(frameon=False, loc="upper left")
-    ax.set_title(f"(b) best model, split {int(best['split'])} seed {int(best['run'])}, test members", loc="left", weight="bold"); st.tidy(ax)
+    ax.set_title(f"(b) best CNN (split {int(best['split'])}, seed {int(best['run'])})", loc="left", weight="bold"); st.tidy(ax)
     fig.tight_layout()
     if out_png is None:
         return fig
