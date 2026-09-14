@@ -57,11 +57,19 @@ def main():
 
     cnn_rows = []
     if a.tag:
-        nyear = years.size
+        # the tag's own onset-year range (e.g. 1991-2030 for lag1) — CNN predictions are scored on it
+        sp0 = paths.tvt_split_path(0, a.tag)
+        if sp0.exists():
+            y0, y1 = (int(v) for v in xr.open_dataset(sp0).attrs["target_years"].split("-"))
+            lab_t, yrs_t = bl.load_labels(a.labels_file, y0, y1)
+        else:
+            lab_t, yrs_t = labels, years
+        nyear = yrs_t.size
         for k, te_b, va_b, tr_b in bl.iter_split_blocks(9, 10):
             preds = bl.load_cnn_test_predictions(paths.cesm2le_predictions_dir(a.tag), k)
             for r, (yt, yp, thr) in enumerate(preds):
                 if yt.size != 10 * nyear:
+                    print(f"  [skip] split {k} run {r}: {yt.size} predictions vs {10 * nyear} expected")
                     continue
                 yt2, pr2 = yt.reshape(10, nyear), (yp >= thr).astype(int).reshape(10, nyear)
                 s = ev.event_scores_members(yt2, pr2); s.update(split=k, run=r)

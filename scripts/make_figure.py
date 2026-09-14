@@ -304,7 +304,7 @@ class Data:
     def baselines(self):
         def _load():
             a = self.a
-            tag = a.baselines_tag or ("" if a.labels == "original" else f"rel_w{a.window}_s{a.n_sigma:g}")
+            tag = a.baselines_tag or a.tag or ("" if a.labels == "original" else f"rel_w{a.window}_s{a.n_sigma:g}")
             f = paths.RESULTS_DIR / "baselines" / tag / "baselines_all_splits.nc"
             if not f.exists():
                 raise FileNotFoundError(f"{f} — run 07_baselines.py" + (f" --tag {tag}" if tag else ""))

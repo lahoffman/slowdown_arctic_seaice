@@ -65,15 +65,15 @@ def plot_by_group(ds: xr.Dataset, out_png) -> None:
 def plot_events(table: dict, cnn_rows: list, out_png) -> None:
     """(a) event-duration histogram, (b) events per onset year, (c) event hit rate vs sample F1 per model."""
     n = 3 if cnn_rows else 2
-    fig, axes = plt.subplots(1, n, figsize=(5 * n, 4))
+    fig, axes = plt.subplots(1, n, figsize=(5.6 * n, 4.2))
     d = table["duration"]
     axes[0].hist(d, bins=np.arange(0.5, d.max() + 1.5), color=st.C_ALL, edgecolor="white")
     axes[0].set_xlabel("event duration [consecutive onset years]"); axes[0].set_ylabel("events")
-    axes[0].set_title(f"(a) {d.size} events from {d.sum()} positive member-years", loc="left", weight="bold")
+    axes[0].set_title(f"(a) event duration ({d.size} events, {d.sum()} member-years)", loc="left", weight="bold")
     yrs, cnt = np.unique(table["onset"], return_counts=True)
     axes[1].bar(yrs, cnt, color=st.C_ALL, width=0.8)
     axes[1].set_xlabel("event onset year"); axes[1].set_ylabel("events (all members)")
-    axes[1].set_title("(b) event onsets by year", loc="left", weight="bold")
+    axes[1].set_title("(b) onsets by year", loc="left", weight="bold")
     if cnn_rows:
         ax = axes[2]
         ax.scatter([r["f1_sample"] for r in cnn_rows], [r["hit_rate"] for r in cnn_rows], s=18, color=st.C_ALL,
@@ -81,7 +81,8 @@ def plot_events(table: dict, cnn_rows: list, out_png) -> None:
         ax.scatter([r["f1_sample"] for r in cnn_rows], [r["false_alarm_ratio"] for r in cnn_rows], s=18,
                    color=st.C_NOSLOW, label="false-alarm ratio")
         ax.set_xlabel("sample-level F1"); ax.set_ylabel("event-level rate"); ax.set_ylim(0, 1)
-        ax.legend(frameon=False); ax.set_title("(c) event vs sample skill, one point per CNN", loc="left", weight="bold")
+        ax.legend(frameon=False); ax.set_title("(c) event vs sample skill per CNN", loc="left", weight="bold")
     for ax in axes:
         st.tidy(ax)
+    fig.tight_layout(w_pad=2.5)
     st.save(fig, out_png)
