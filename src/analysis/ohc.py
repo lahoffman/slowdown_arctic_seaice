@@ -151,9 +151,11 @@ def ann_score(Xtr, ytr, Xte, yte, task: str, hidden=(30, 30), seed: int = 0) -> 
     mu, sd = Xtr.mean(0), Xtr.std(0) + 1e-12
     Xtr, Xte = (Xtr - mu) / sd, (Xte - mu) / sd
     if task == "regression":
-        m = MLPRegressor(hidden, alpha=1e-3, max_iter=500, early_stopping=True, random_state=seed).fit(Xtr, ytr)
+        m = MLPRegressor(hidden_layer_sizes=hidden, alpha=1e-3, max_iter=500, early_stopping=True,
+                         random_state=seed).fit(Xtr, ytr)
         p = m.predict(Xte); return 1 - np.sum((yte - p) ** 2) / np.sum((yte - yte.mean()) ** 2)
-    m = MLPClassifier(hidden, alpha=1e-3, max_iter=500, early_stopping=True, random_state=seed).fit(Xtr, ytr.astype(int))
+    m = MLPClassifier(hidden_layer_sizes=hidden, alpha=1e-3, max_iter=500, early_stopping=True,
+                      random_state=seed).fit(Xtr, ytr.astype(int))
     return roc_auc_score(yte.astype(int), m.predict_proba(Xte)[:, 1])
 
 
