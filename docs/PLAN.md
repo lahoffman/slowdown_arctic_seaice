@@ -85,18 +85,24 @@ SI numbering (v2): S1 definition · S2 pooled σ/cap · S3 forcing groups · S4 
 
 ## Phase 9 — AIES manuscript (decided 2026-09-14; GRL manuscript kept as backup in `manuscript/`)
 
-- [ ] 9.1 New manuscript from the AMS LaTeX package (`~/Downloads/AMS LaTeX Package 6`, `ametsocV6.2.cls`) in `manuscript_aies/` (private repo like `manuscript/`); reuse Intro/Methods text from the GRL draft; figure plan in `docs/FIGURES.md`; outline to follow in `docs/AIES_OUTLINE.md`.
-- [ ] 9.2 Give the new diagnostics `make_figure.py` ids (`occlusion`, `learning_curves` exist; add `residual`, `interannual`, `regression`, `arithmetic_synthetic`, `aux_frozen_synthetic`) and a `sync_figures.sh` for the new repo.
-- [ ] 9.3 Zach: send offset figure + panel (d) + the 7/3/0 ledger; ask GRL vs AIES.
+- [x] 9.1 `manuscript_aies/` built (AMS `ametsocV6.2`, private repo `lahoffman/slowdown_arctic_seaice-manuscript-aies`, purged from the public history): `main.tex` (10 sections + App. A derivation + App. B frozen scalar), `supplement.tex` (Texts S1–S4, Tables S1–S3, 16 SI figs), `references.bib`, `Makefile`, `sync_figures.sh`. Story/abstract/section map in `docs/AIES_DRAFT.md`; figure inventory in `docs/FIGURES.md`.
+- [~] 9.2 `make_figure.py` ids: `occlusion`, `learning_curves` exist; still to add `residual`, `interannual`, `regression`, `xai_compare`, `obs_predict`, `arithmetic_synthetic`, `aux_frozen_synthetic`.
+- [ ] 9.3 Zach: send offset figure + panel (d) + the ledger; AIES vs GRL.
+- [x] 9.4 Literature due diligence on the coupling (`docs/LITERATURE_COUPLING.md`, 2026-09-15): the phenomenon is Oldham's problem / "mathematical coupling" (Oldham 1962; Tu & Gilthorpe 2007; Kenney 1982 in geoscience); the OLS-trend form corr = −√(3(w−1)/(w(w+1))) is not in the climate or ML literature. **LB22 confirmed onset-inclusive** ("OHC100 for the year 2000 → whether 2000–2009 is a slowdown"; only baseline an IPO logistic). Hoffman 2025 / PROCAST are state targets with a persistence null → no arithmetic coupling. Framing for §1/§9/App. A fixed accordingly.
+- [~] 9.5 **Reframe (2026-09-15):** headline = (i) the coupling, derived and quantified; (ii) seven XAI methods agree with each other and still point at the proxy (occlusion prices it zero); (iii) the 11 % ledger with IPO ≥ ice extent on honest labels. "Skill before XAI" checklist → one paragraph in Conclusions, not the contribution. Abstract/§1 ¶3/§6 order to be rewritten on this basis.
+- [~] 9.6 Observations restored (`10_obs_baseline_predict.py`, `src/analysis/obs_predict.py`, `src/plotting/obs_predict.py`): logistic SIE / IPO / SIE+IPO / SIE+Pacific fitted on CESM2-LE (9 split-fits → band), applied to NSIDC SIE anomaly (forced removed as in the CNN pipeline) and ERSSTv5 JJA indices; observed offset-window z for verification where the decade is complete; off1 CNN vote fraction overlaid when present. *Code done; run on profx.* This is Fig. 8b: CNN and logistic side by side on the observed record.
 
-### Runs still pending (all on the offset labels `off1`)
-- [ ] `07_baselines.py --labels-file $LBL1 --tag off1` — binary table incl. `logit_siv*` rows (minutes).
-- [ ] `03 … --tag off1_aux` + `04_cesm2le_cnn_regress.py --tag off1_aux --splits 2 5 7 --n-runs 2` — is the map empty nonlinearly? (1 h GPU).
-- [ ] If the regression subset is ≈ OLS: one full classification CNN on `off1` (`base` + warm-started `aux`, 45 each) for the paper's LRP/occlusion/obs figures → `run_retrain.sh off1_base off1_aux` → `run_postprocess.sh`. Kill/ignore `rel_concurrent`.
-- [ ] `09_sensitivity_sweep.py` with `--trend-offset 1` (option to add) → S17 on honest labels.
-- [ ] 6.3 vote-fraction recount + Fig. 4 on the final CNN; 6.7 obs LRP.
-- [ ] RILE variant (3-yr and 5-yr windows, negative tail) — "for giggles", 8.11 below.
-- [ ] Two small synthetic figures (arithmetic; frozen scalar) — `scripts/10_synthetic_checks.py`.
+### Status of runs (2026-09-15)
+- [x] `07_baselines.py --tag off1` — AUROC: SIE 0.612, IPO 0.658, Pacific 0.662, SIE+IPO 0.681, volume 0.651, SIE+vol+Pacific 0.686. F1 ≈ always-positive at this skill level → report AUROC + AUPRC.
+- [x] `04_cesm2le_cnn_regress.py --tag off1_aux --splits 2 5 7 --n-runs 2` — finished; `results/regression/off1_aux/regress_summary.md` to be read (cat it).
+- [x] 8.12 thickness maps (SEP, MAR): SIE + 20 PCs ≤ 0.10 → thickness *pattern* adds nothing at pan-Arctic decadal scale; closed.
+- [~] 5.3b `05b_xai_compare.py --tag rel_aux --split 2 --run 0`: LRP-z, α2β1, DeepTaylor, input×gradient ran (Arctic share 0.22–0.31 vs area 0.04; Pacific ≈ area); composite normalisation fixed (99th pct). IG / SmoothGrad / SHAP missing → rerun with `tee`, read `FAILED`/`skip` lines; `pip install shap`.
+- [~] off1 CNN: splits `off1` built (1990–2029); `off1_aux` exists. **Launch:** `LABELS=$LBL1 scripts/run_retrain.sh off1 off1_aux` in a screen, then `run_postprocess.sh off1 off1_aux` (occlusion, obs predictions × products × forced, LRP).
+- [ ] `10_obs_baseline_predict.py --labels-file $LBL1 --forced ensmean group_cmip6 group_smbb linear` (minutes; no CNN needed), then again with `--tag off1 --product oisst` after postprocess.
+- [ ] `09_rile_compare.py --windows 3 5 10` after the six `07 --label-var` runs (8.11).
+- [ ] `09_sensitivity_sweep.py` offset option → S17 on honest labels.
+- [ ] Synthetic figures (arithmetic; frozen scalar) — `scripts/10_synthetic_checks.py`; AR(1) check: does the fitted SIE autocorrelation alone reproduce the offset R² 0.075?
+- [ ] GMST version of the coupling test for the LB22 sentence (GMST(t) vs 10-yr trend from t, onset-inclusive vs offset) — optional, one script.
 
 ### 8.11 RILE / short-window variant
 ```
