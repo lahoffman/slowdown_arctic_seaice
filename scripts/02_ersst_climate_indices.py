@@ -46,6 +46,8 @@ from src.data.observations.ersst.climate_indices import (
 from src.data.observations.ersst.download import load_ersst
 
 ALL_INDICES = ['nino34', 'enso_cptp', 'ipo', 'arctic_sst']
+DATES = None
+PRODUCT = {'name': 'ersst', 'prefix': 'ersstv5', 'file': paths.ERSST_REGRIDDED, 'dir': paths.ERSST_DIR}
 
 
 def _sst_dir() -> Path:
@@ -59,8 +61,8 @@ def _grid_file() -> Path:
 
 
 def _indices_dir() -> Path:
-    """Output directory for climate index NetCDF files."""
-    return paths.ERSST_DIR 
+    """Output directory for climate index NetCDF files (per product)."""
+    return PRODUCT['dir']
 
 def _cesm_forced_file() -> Path:
     """CESM2-LE Arctic SST forced ensemble mean NetCDF file."""
@@ -70,13 +72,19 @@ def _cesm_forced_file() -> Path:
 # Index computation
 # ---------------------------------------------------------------------------
 
+def _stamp(output_file: str, dates) -> None:
+    """Record product and first month on an index file (the save_* helpers store only a sample index)."""
+    with nc.Dataset(output_file, 'a') as ds:
+        ds.product = PRODUCT['name']; ds.start_date = str(dates[0].date())
+
+
 def compute_nino34(sst_dir, lat, lon, years) -> None:
     """Compute Niño3.4 index and save."""
     print('\n[1/3] Computing Niño3.4 index ...')
     nino34, labels = compute_nino34_index(sst_dir, lat, lon, years)
 
-    output_file = str(_indices_dir() / 'ersstv5_nino34_index.nc')
-    save_nino34(nino34, labels, years, output_file)
+    output_file = str(_indices_dir() / f"{PRODUCT['prefix']}_nino34_index.nc")
+    save_nino34(nino34, labels, years, output_file); _stamp(output_file, DATES)
 
 
 def compute_enso_cptp(sst_dir, lat, lon, years) -> None:
@@ -84,8 +92,8 @@ def compute_enso_cptp(sst_dir, lat, lon, years) -> None:
     print('\n[2/3] Computing ENSO CP/TP indices ...')
     result = compute_enso_cp_tp_indices(sst_dir, lat, lon, years)
 
-    output_file = str(_indices_dir() / 'ersstv5_enso_cptp_indices.nc')
-    save_enso_cp_tp(result, years, output_file)
+    output_file = str(_indices_dir() / f"{PRODUCT['prefix']}_enso_cptp_indices.nc")
+    save_enso_cp_tp(result, years, output_file); _stamp(output_file, DATES)
 
 
 def compute_ipo(sst_dir, lat, lon, years) -> None:
@@ -95,8 +103,8 @@ def compute_ipo(sst_dir, lat, lon, years) -> None:
         sst_dir, lat, lon, years
     )
 
-    output_file = str(_indices_dir() / 'ersstv5_ipo_index.nc')
-    save_ipo(ipo, ipo_filtered, labels, labels_filtered, years, output_file)
+    output_file = str(_indices_dir() / f"{PRODUCT['prefix']}_ipo_index.nc")
+    save_ipo(ipo, ipo_filtered, labels, labels_filtered, years, output_file); _stamp(output_file, DATES)
 
 
 def compute_arctic(sst_obs, lat, lon, years, dates) -> None:
@@ -122,7 +130,7 @@ def compute_arctic(sst_obs, lat, lon, years, dates) -> None:
     obs_i0, obs_i1 = diagnostics['obs_slice']
     dates_aligned = dates[obs_i0:obs_i1]
 
-    output_file = str(_indices_dir() / 'ersstv5_arctic_sst_index.nc')
+    output_file = str(_indices_dir() / f"{PRODUCT['prefix']}_arctic_sst_index.nc")
     save_arctic_sst(arctic_sst, labels, dates_aligned, output_file)
 
 
@@ -136,6 +144,8 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
+    parser.add_argument('--product', choices=['ersst', 'oisst'], default='ersst',
+                        help='SST product on the CESM2 grid (default ersst); oisst writes oisst_*_index.nc')
     parser.add_argument(
         '--index', '-i',
         nargs='+',
@@ -155,6 +165,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     indices = args.index or ALL_INDICES
+    if args.product == 'oisst':
+        PRODUCT.update(name='oisst', prefix='oisst', file=paths.OISST_REGRIDDED, dir=paths.OISST_DIR)
 
     print('\n' + '=' * 70)
     print('ERSSTv5 Climate Indices')
@@ -170,16 +182,21 @@ def main() -> None:
 
     # Load ERSSTv5
     print('\nLoading ERSSTv5 ...')
-    ds = nc.Dataset(ERSST_REGRID, 'r')
+    ds = nc.Dataset(PRODUCT['file'], 'r')
     sst = ds.variables['sst_obs'][:]
     lat = ds.variables['lat_cesm2'][:]
     lon = ds.variables['lon_cesm2'][:]
-
+    ntime = sst.shape[0]
+    if 'time' in ds.variables:                                   # OISST carries a time axis
+        import xarray as xr
+        with xr.open_dataset(PRODUCT['file']) as dsx:
+            dates = pd.DatetimeIndex(dsx['time'].values).to_period('M').to_timestamp()
+    else:                                                        # ERSST: monthly from 1854-01
+        dates = pd.date_range(start='1854-01-01', periods=ntime, freq='MS')
     ds.close()
 
-    ntime  = sst.shape[0]
-    dates  = pd.date_range(start='1854-01-01', periods=ntime, freq='MS')
     years  = dates.year.to_numpy()
+    global DATES; DATES = dates
 
     print(f'  sst shape : {sst.shape}')
 

@@ -40,7 +40,7 @@ def parse_args():
     p.add_argument("--obs-start", type=int, default=1990); p.add_argument("--obs-end", type=int, default=2025)
     p.add_argument("--demean", default="group", choices=["all", "group"])
     p.add_argument("--tag", default=None, help="CNN tag whose observational predictions to overlay (if present)")
-    p.add_argument("--product", default="ersst", choices=["ersst", "oisst"], help="product for the CNN overlay")
+    p.add_argument("--product", default="ersst", choices=["ersst", "oisst"], help="SST product for the indices and the CNN overlay")
     p.add_argument("--no-fig", action="store_true")
     return p.parse_args()
 
@@ -50,7 +50,11 @@ def main():
     with xr.open_dataset(a.labels_file) as ds:
         window, offset = int(ds.attrs.get("window", 10)), int(ds.attrs.get("trend_offset", 0))
     key = f"w{window}_off{offset}"
-    out_dir = paths.RESULTS_DIR / "obs_predict" / key; out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = paths.RESULTS_DIR / "obs_predict" / key / a.product; out_dir.mkdir(parents=True, exist_ok=True)
+    ipo_file, nino_file = paths.OBS_INDEX_FILES[a.product]
+    for f in (ipo_file, nino_file):
+        if not f.exists():
+            sys.exit(f"{f} missing — run: python scripts/02_ersst_climate_indices.py --product {a.product} --index nino34 ipo")
     metrics_dir = paths.CESM2LE_AICE_DIR / "metrics"
     nsidc = paths.nsidc_sie_slowdown_events(9)
 
@@ -65,7 +69,7 @@ def main():
     slow_years = op.observed_slowdown_years(nsidc)
     for fm in a.forced:
         print(f"\n== forced reference: {fm}")
-        obs = op.observed_scalars(obs_years, fm, nsidc, metrics_dir, paths.ERSST_IPO, paths.ERSST_NINO34)
+        obs = op.observed_scalars(obs_years, fm, nsidc, metrics_dir, ipo_file, nino_file, index_t0=None)
         probs = op.predict_observed(fits, obs)
         z = op.observed_offset_z(obs_years, fm, nsidc, metrics_dir, a.labels_file, window, offset)
         frac = op.cnn_vote_fraction(paths.obs_predictions_dir(a.product, fm, a.tag), obs_years) if a.tag else None
@@ -78,13 +82,13 @@ def main():
                         coords={"year": obs_years, "fit": np.arange(9)})
         if frac is not None:
             ds["cnn_vote_fraction"] = ("year", frac)
-        ds.attrs.update(forced_method=fm, labels_file=str(a.labels_file), window=window, trend_offset=offset)
+        ds.attrs.update(forced_method=fm, product=a.product, labels_file=str(a.labels_file), window=window, trend_offset=offset)
         ds.to_netcdf(out_dir / f"obs_predict_{fm}.nc")
         if not a.no_fig:
             from src.plotting import obs_predict as plot, style as st
             st.paper_rc()
-            plot.plot_obs_predict(obs_years, obs, probs, z, frac, fm,
-                                  paths.FIGURES_DIR / "diagnostics" / f"obs_predict_{key}_{fm}.png",
+            plot.plot_obs_predict(obs_years, obs, probs, z, frac, f"{fm}; indices {a.product.upper()}",
+                                  paths.FIGURES_DIR / "diagnostics" / f"obs_predict_{key}_{a.product}_{fm}.png",
                                   obs_slow_years=slow_years, cnn_label=f"CNN {a.tag} ({a.product})")
 
 

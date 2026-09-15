@@ -28,14 +28,27 @@ FEATURE_SETS = {"logit_sie_anom": ["sie_anom"], "logit_ipo": ["ipo"], "logit_sie
 ERSST_T0 = "1854-01-01"
 
 
-def _jja_by_year(monthly: np.ndarray, t0: str, years: np.ndarray) -> np.ndarray:
-    s = pd.Series(monthly, index=pd.date_range(t0, periods=monthly.size, freq="MS"))
+def _jja_by_year(monthly: np.ndarray, t0: Optional[str], years: np.ndarray, times=None) -> np.ndarray:
+    """JJA mean per year of a monthly series; time axis from ``times`` if given, else monthly from ``t0``."""
+    index = pd.DatetimeIndex(times) if times is not None else pd.date_range(t0, periods=monthly.size, freq="MS")
+    s = pd.Series(monthly, index=index)
     s = s[s.index.month.isin([6, 7, 8])]
     return s.groupby(s.index.year).mean().reindex(years).values
 
 
+def _index_series(f: Path, var: str, years: np.ndarray, t0: Optional[str]) -> np.ndarray:
+    """JJA-by-year of one index file; uses its ``time``/``dates`` coordinate when present (OISST), else ``t0`` (ERSST, 1854-01)."""
+    with xr.open_dataset(f) as ds:
+        v = ds[var].values
+        tcoord = next((ds[c].values for c in ("time", "dates") if c in ds), None)
+        start = ds.attrs.get("start_date")
+    if tcoord is not None and len(tcoord) == v.size:
+        return _jja_by_year(v, None, years, times=tcoord)
+    return _jja_by_year(v, t0 or start or ERSST_T0, years)
+
+
 def observed_scalars(years: np.ndarray, forced_method: str, nsidc_events_file: Path, metrics_dir: Path,
-                     ipo_file: Path, nino34_file: Path) -> Dict[str, np.ndarray]:
+                     ipo_file: Path, nino34_file: Path, index_t0: Optional[str] = ERSST_T0) -> Dict[str, np.ndarray]:
     """Observed sie_anom (forced removed as in the CNN pipeline), JJA IPO (filtered) and Niño3.4, each (nyear,)."""
     if forced_method == "linear":                       # NaN-safe detrend (the shared helper is not)
         with xr.open_dataset(nsidc_events_file) as ds:
@@ -46,10 +59,8 @@ def observed_scalars(years: np.ndarray, forced_method: str, nsidc_events_file: P
         out = {"sie_anom": anom}
     else:
         out = {"sie_anom": oi.observed_sie_anomaly(nsidc_events_file, years, forced_method, metrics_dir)}
-    with xr.open_dataset(ipo_file) as ds:
-        out["ipo"] = _jja_by_year(ds["ipo_filtered"].values, ERSST_T0, years)
-    with xr.open_dataset(nino34_file) as ds:
-        out["nino34"] = _jja_by_year(ds["nino34"].values, ERSST_T0, years)
+    out["ipo"] = _index_series(ipo_file, "ipo_filtered", years, index_t0)
+    out["nino34"] = _index_series(nino34_file, "nino34", years, index_t0)
     return out
 
 

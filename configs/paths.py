@@ -116,6 +116,9 @@ OISST_RAW_DIR = OISST_DIR / 'raw'            # daily files, deleted after the mo
 OISST_MONTHLY_DIR = OISST_DIR / 'monthly'    # oisst_v2.1_mon_YYYYMM.nc on the 0.25 deg grid
 OISST_REGRIDDED = OISST_DIR / 'sst_regrid_cesm2le.nc'
 OISST_ARCTIC_SST = OISST_DIR / 'oisst_arctic_sst_index.nc'
+OISST_NINO34 = OISST_DIR / 'oisst_nino34_index.nc'          # 02_ersst_climate_indices.py --product oisst
+OISST_IPO = OISST_DIR / 'oisst_ipo_index.nc'
+OBS_INDEX_FILES = {'ersst': (ERSST_IPO, ERSST_NINO34), 'oisst': (OISST_IPO, OISST_NINO34)}
 
 
 def oisst_testing_file(forced_method: str = 'ensmean') -> Path:
