@@ -181,6 +181,6 @@ def summary_markdown(years, obs, probs, z, frac, forced_method, claim=(2016, 202
             row.append(f"{frac[i]:.2f}" if np.isfinite(frac[i]) else "—")
         row.append(f"{z[i]:+.2f}" if np.isfinite(z[i]) else "—")
         lines.append("| " + " | ".join(row) + " |")
-    lines.append(f"\nMean P over {c0}–{c1}: " + ", ".join(f"{p} {np.nanmedian(probs[p][:, sel], 0).mean():.2f}" for p in probs)
+    lines.append(f"\nMean P over {c0}–{c1}: " + ", ".join(f"{p} {np.nanmean(np.nanmedian(probs[p][:, sel], 0)):.2f}" for p in probs)
                  + f"; base rate {base_rate:.2f}.\n")
     return "\n".join(lines) + "\n"
