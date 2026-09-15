@@ -90,15 +90,22 @@ def regrid(field: np.ndarray, idx: np.ndarray, shape: Tuple[int, int], landmask:
     return out
 
 
-def member_series(ds_hist: xr.Dataset, ds_ssp: xr.Dataset, member: str, n_levels: int, dz_cm: np.ndarray,
-                  years: np.ndarray) -> np.ndarray:
-    """Annual OHC (nyear, nlat, nlon) for one member across the historical + SSP stores; computes here."""
-    parts = []
+def member_series(ds_hist: xr.Dataset, ds_ssp: xr.Dataset, member: str, n_levels: Dict[int, int], dz_cm: np.ndarray,
+                  years: np.ndarray) -> Dict[int, np.ndarray]:
+    """
+    Annual OHC (nyear, nlat, nlon) for one member and every requested depth, from ONE pass over the
+    historical + SSP stores (chunks carry all 60 levels, so all integrals are taken from the same read).
+    n_levels: {depth_m: number of top levels}. Computes here.
+    """
+    parts = {d: [] for d in n_levels}
     for ds in (ds_hist, ds_ssp):
         if ds is None:
             continue
         t = ds["TEMP"].sel(member_id=member)
-        parts.append(ohc_column(t, dz_cm, n_levels))
-    da = xr.concat(parts, dim="time") if len(parts) > 1 else parts[0]
-    da = da.sel(time=slice(f"{years[0]}-01-01", f"{years[-1]}-12-31"))
-    return annual_mean(da, years).transpose("year", "nlat", "nlon").values.astype(np.float32)
+        for d, n in n_levels.items():
+            parts[d].append(ohc_column(t, dz_cm, n))
+    stacked = xr.concat([xr.concat(parts[d], dim="time") if len(parts[d]) > 1 else parts[d][0] for d in n_levels],
+                        dim=xr.DataArray(list(n_levels), dims="depth", name="depth"))
+    stacked = stacked.sel(time=slice(f"{years[0]}-01-01", f"{years[-1]}-12-31"))
+    out = annual_mean(stacked, years).transpose("depth", "year", "nlat", "nlon").values.astype(np.float32)   # one compute
+    return {d: out[i] for i, d in enumerate(n_levels)}

@@ -95,27 +95,29 @@ def main():
         idx = O.pop_to_cam_indices(tlat, tlon, lat, lon)
         if ds_h is None:
             print(f"  [note] no historical store for {forcing}: years before 2015 will be NaN")
-        for depth in a.depth:
-            nlev = O.levels_to(depth, zwb)
-            print(f"  OHC{depth}: integrating the surface to {zwb[nlev-1]/100:.0f} m (top {nlev} levels); the other {zwb.size - nlev} levels are discarded")
-            arrays, ids = [], []
-            for m in sel:
-                mid = str(members[m]); f = cache / f"ohc{depth}_{forcing}_{mid}.npy"
-                if f.exists():
-                    arr = np.load(f)
-                else:
-                    pop = O.member_series(ds_h, ds_s, mid, nlev, dz, years)          # (nyear, nlat, nlon), computes
-                    arr = O.regrid(pop, idx, (lat.size, lon.size), landmask)
-                    np.save(f, arr)
-                arrays.append(arr); ids.append(mid)
-                print(f"    {forcing} member {m:2d} {mid}: done", flush=True)
-            out = xr.Dataset({"ohc": (("nens", "nyear", "lat", "lon"), np.stack(arrays))},
+        nlev = {d: O.levels_to(d, zwb) for d in a.depth}
+        for d, n in nlev.items():
+            print(f"  OHC{d}: integrating the surface to {zwb[n-1]/100:.0f} m (top {n} levels); the other {zwb.size - n} levels are discarded")
+        arrays, ids = {d: [] for d in a.depth}, []
+        for m in sel:
+            mid = str(members[m]); files = {d: cache / f"ohc{d}_{forcing}_{mid}.npy" for d in a.depth}
+            todo = {d: nlev[d] for d in a.depth if not files[d].exists()}
+            if todo:
+                pop = O.member_series(ds_h, ds_s, mid, todo, dz, years)           # one pass, all missing depths
+                for d, arr in pop.items():
+                    np.save(files[d], O.regrid(arr, idx, (lat.size, lon.size), landmask))
+            for d in a.depth:
+                arrays[d].append(np.load(files[d]))
+            ids.append(mid)
+            print(f"    {forcing} member {m:2d} {mid}: done ({', '.join(f'OHC{d}' for d in a.depth)})", flush=True)
+        for d in a.depth:
+            out = xr.Dataset({"ohc": (("nens", "nyear", "lat", "lon"), np.stack(arrays[d]))},
                              coords={"nyear": years, "lat": lat, "lon": lon, "member_id": ("nens", ids)})
-            out["ohc"].attrs.update(units="J m-2", long_name=f"ocean heat content 0-{depth} m, annual mean",
-                                    reference_temperature_C=O.T_REF_C, rho=O.RHO, cp=O.CP, n_levels=nlev)
+            out["ohc"].attrs.update(units="J m-2", long_name=f"ocean heat content 0-{d} m, annual mean",
+                                    reference_temperature_C=O.T_REF_C, rho=O.RHO, cp=O.CP, n_levels=nlev[d])
             out.attrs.update(source="ncar-cesm2-lens Zarr (AWS)", forcing_variant=forcing,
                              group=O.GROUP_OF_FORCING[forcing], note="POP T-grid → CAM grid, nearest neighbour; land NaN")
-            fn = OUT_DIR / f"ohc{depth}_cesmle_{O.GROUP_OF_FORCING[forcing]}members_{years[0]}-{years[-1]}.nc"
+            fn = OUT_DIR / f"ohc{d}_cesmle_{O.GROUP_OF_FORCING[forcing]}members_{years[0]}-{years[-1]}.nc"
             out.to_netcdf(fn, encoding={"ohc": {"zlib": True, "complevel": 4}}); print(f"  → {fn}")
 
 
