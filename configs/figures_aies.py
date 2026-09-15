@@ -25,6 +25,7 @@ MAIN = {
     "fig_S19.pdf":             dict(kind="make_figure", ids=["S19"], args=[], needs="09_obs_forced_removal (done)"),
     "interannual_check.png":         dict(kind="diagnostic", src="interannual_check.png", needs="09_interannual_check (done)"),
     "residual_analysis_w10_off1.png": dict(kind="diagnostic", src="residual_analysis_w10_off1.png", needs="09_residual_analysis (done)"),
+    "gmt_coupling_check.png":        dict(kind="diagnostic", src="gmt_coupling_check.png", needs="09_gmt_coupling_check"),
     "regression_off1_aux.png":       dict(kind="diagnostic", src="regression_off1_aux.png", needs="04_cesm2le_cnn_regress --tag off1_aux (offset target)"),
     "xai_compare_off1_aux.png":      dict(kind="diagnostic", src="xai_compare_off1_aux.png", needs="05b --tag off1_aux (after training)"),
     "obs_predict_ersst.png":         dict(kind="diagnostic", src="obs_predict_w10_off1_ersst_linear.png", needs="10_obs_baseline_predict (done; CNN votes after postprocess)"),
