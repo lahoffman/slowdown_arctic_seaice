@@ -28,7 +28,8 @@ METHODS: Dict[str, Optional[str]] = {
     "gradient":       "gradient",
     "shap_deep":      None,
 }
-DEFAULT_METHODS = ["lrp_z", "lrp_a2b1", "deep_taylor", "integrated_gradients", "smoothgrad", "input_x_gradient", "shap_deep"]
+# IG and SmoothGrad are 16–32× the cost of the others and hung for >1 h on the two-input model; opt in with --methods
+DEFAULT_METHODS = ["lrp_z", "lrp_a2b1", "deep_taylor", "input_x_gradient", "shap_deep"]
 
 
 def _zero_land(x, land_fill=-10.0):

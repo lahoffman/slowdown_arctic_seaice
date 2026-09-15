@@ -18,8 +18,12 @@ Runs in TF1 graph mode (iNNvestigate); separate process from training scripts.
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
+
+for _v in ("OMP_NUM_THREADS", "TF_NUM_INTRAOP_THREADS", "TF_NUM_INTEROP_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "4")            # attribution is CPU-bound; do not take the whole machine
 
 import netCDF4 as nc
 import numpy as np

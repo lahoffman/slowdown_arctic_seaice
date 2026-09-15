@@ -13,12 +13,13 @@ prevalence (a balanced fit's 0.5 = the base rate). Two references, kept separate
                the paper's definition) or from the observed trend anomalies (obs, as in v1).
 CNN vote fractions for --tag are overlaid when present.
 
-Outputs: results/obs_predict/<key>/obs_predict_<forced>.nc, summary_<forced>.md,
-         FIGURES_DIR/diagnostics/obs_predict_<key>_<forced>.png      (key = w<window>_off<offset>)
+Outputs: results/obs_predict/<key>/<product>/obs_predict_<forced>[_sigmodel].nc, summary_<forced>[_sigmodel].md,
+         FIGURES_DIR/diagnostics/obs_predict_<key>_<product>_<forced>[_sigmodel].png   (key = w<window>_off<offset>)
 
 Usage:
-  python scripts/10_obs_baseline_predict.py --labels-file $LBL1 --forced ensmean group_smbb linear
-  python scripts/10_obs_baseline_predict.py --labels-file $LBL1 --forced ensmean --tag off1 --product oisst
+  python scripts/10_obs_baseline_predict.py --labels-file $LBL1 --forced linear quadratic group_cmip6            # ERSST, obs σ
+  python scripts/10_obs_baseline_predict.py --labels-file $LBL1 --forced linear --product oisst --tag off1        # OISST + CNN votes
+  python scripts/10_obs_baseline_predict.py --labels-file $LBL1 --forced linear --label-sigma model               # SI: the model's bar
 """
 
 import argparse
@@ -41,7 +42,8 @@ def parse_args():
     p.add_argument("--labels-file", type=Path, required=True)
     p.add_argument("--forced", nargs="+", default=["ensmean"], help="predictor-anomaly references: ensmean group_cmip6 group_smbb linear quadratic")
     p.add_argument("--label-ref", default="linear", choices=["linear", "quadratic"], help="observed reference for classifying the observed decade")
-    p.add_argument("--label-sigma", default="model", choices=["model", "obs"], help="σ for the observed z: model pooled σ or observed trend-anomaly sd")
+    p.add_argument("--label-sigma", default="obs", choices=["obs", "model"],
+                   help="σ for the observed z: observed trend-anomaly sd (default; the observed bar) or the model's pooled σ (SI comparison)")
     p.add_argument("--no-calibration", action="store_true", help="plot the raw balanced-fit probabilities (0.5 = base rate) instead")
     p.add_argument("--start-year", type=int, default=1990); p.add_argument("--end-year", type=int, default=2029,
                    help="last onset year used to FIT (must match the label file's cap)")
@@ -87,7 +89,8 @@ def main():
         if a.tag and frac is None:
             print(f"  [note] no CNN predictions for tag {a.tag} / {a.product} / {fm} — run 03_obs_test + 06_cnn_predict_obs")
         md = op.summary_markdown(obs_years, obs, probs, z, frac, fm, base_rate=base_rate, label_note=label_note)
-        (out_dir / f"summary_{fm}.md").write_text(md); print(md)
+        sfx = "" if a.label_sigma == "obs" else "_sigmodel"
+        (out_dir / f"summary_{fm}{sfx}.md").write_text(md); print(md)
         ds = xr.Dataset({f"p_{k}": (("fit", "year"), v) for k, v in probs.items()}
                         | {k: ("year", v) for k, v in obs.items()} | {"obs_z": ("year", z)},
                         coords={"year": obs_years, "fit": np.arange(9)})
@@ -96,12 +99,12 @@ def main():
         ds.attrs.update(forced_method=fm, product=a.product, labels_file=str(a.labels_file), window=window, trend_offset=offset,
                         label_ref=a.label_ref, label_sigma=a.label_sigma, sigma=sigma, base_rate=base_rate,
                         calibrated=int(not a.no_calibration))
-        ds.to_netcdf(out_dir / f"obs_predict_{fm}.nc")
+        ds.to_netcdf(out_dir / f"obs_predict_{fm}{sfx}.nc")
         if not a.no_fig:
             from src.plotting import obs_predict as plot, style as st
             st.paper_rc()
             plot.plot_obs_predict(obs_years, obs, probs, z, frac, fm,
-                                  paths.FIGURES_DIR / "diagnostics" / f"obs_predict_{key}_{a.product}_{fm}.png",
+                                  paths.FIGURES_DIR / "diagnostics" / f"obs_predict_{key}_{a.product}_{fm}{sfx}.png",
                                   obs_slow_years=slow_years, cnn_label=f"CNN {a.tag} ({a.product})",
                                   base_rate=base_rate if not a.no_calibration else 0.5,
                                   label_note=f"{a.label_ref} obs. reference, σ from {a.label_sigma}",
