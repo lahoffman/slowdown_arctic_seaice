@@ -23,9 +23,17 @@ dependencies = [
     "scikit-learn>=1.0.0",
     "tensorflow>=2.6.0,<2.15.0",
     "innvestigate>=2.0.0",
+    "shap>=0.42",
 ]
 
 [project.optional-dependencies]
+# reading CESM2-LE ocean fields lazily from the AWS Zarr store (scripts/01_cesm2le_ohc.py)
+cloud = [
+    "intake-esm>=2023.6",
+    "s3fs>=2023.1",
+    "zarr>=2.14",
+    "dask>=2023.1",
+]
 dev = [
     "pytest>=6.0",
     "pytest-cov>=2.12",

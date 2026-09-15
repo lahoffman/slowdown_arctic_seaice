@@ -38,6 +38,7 @@ def parse_args():
     p.add_argument("--group", nargs="+", default=["cmip6", "smbb"], choices=["cmip6", "smbb"])
     p.add_argument("--members", type=int, nargs="+", default=None, help="member indices within the group (default all 50)")
     p.add_argument("--start-year", type=int, default=1990); p.add_argument("--end-year", type=int, default=2100)
+    p.add_argument("--workers", type=int, default=4, help="dask threads for the S3 reads (network-bound)")
     p.add_argument("--catalog", default=O.CATALOG)
     return p.parse_args()
 
@@ -61,10 +62,15 @@ def main():
     if a.list:
         ds = O.open_store(df["path"].iloc[0])
         print("\nstore:", df["path"].iloc[0]); print(ds["TEMP"])
-        print("chunks (member, time, z_t, nlat, nlon):", ds["TEMP"].chunks)
-        print("z_w_bot [m] top 35:", np.round(ds["z_w_bot"].values[:35] / 100, 1))
+        print("chunks (member, time, z_t, nlat, nlon):", tuple(c[0] for c in ds["TEMP"].chunks), "... per dim")
+        print("variables in store:", list(ds.variables))
+        dz, zwb = O.layer_geometry(ds["z_t"].values)
+        print("z_w_bot [m] top 35:", np.round(zwb[:35] / 100, 1))
+        print("levels for 100 / 300 / 700 m:", [O.levels_to(d, zwb) for d in (100, 300, 700)])
         return
 
+    import dask
+    dask.config.set(scheduler="threads", num_workers=a.workers)
     with nc.Dataset(paths.CESM2LE_GRID_FILE) as g:
         lat, lon = np.array(g["lat"][:]), np.array(g["lon"][:])
     with nc.Dataset(paths.LANDMASK_FILE) as d:
@@ -78,10 +84,16 @@ def main():
         ds_h = O.open_store(hist) if hist else None
         ds_s = O.open_store(ssp) if ssp else None
         ref = ds_h or ds_s
-        dz, zwb = ref["dz"].values, ref["z_w_bot"].values
+        dz, zwb = O.layer_geometry(ref["z_t"].values)                     # store carries only z_t
         members = list(ref["member_id"].values)
         sel = a.members if a.members is not None else range(len(members))
-        idx = O.pop_to_cam_indices(ref["TLAT"].values, ref["TLONG"].values, lat, lon)
+        with nc.Dataset(paths.CESM2LE_CICE_GRID_FILE) as g:                # CICE grid == POP T-grid
+            tlat, tlon = np.array(g["TLAT"][:], float), np.array(g["TLON"][:], float)
+        if tlat.shape != (ref.sizes["nlat"], ref.sizes["nlon"]):
+            sys.exit(f"grid mismatch: CICE {tlat.shape} vs store {(ref.sizes['nlat'], ref.sizes['nlon'])}")
+        idx = O.pop_to_cam_indices(tlat, tlon, lat, lon)
+        if ds_h is None:
+            print(f"  [note] no historical store for {forcing}: years before 2015 will be NaN")
         for depth in a.depth:
             nlev = O.levels_to(depth, zwb)
             print(f"  depth {depth} m → top {nlev} levels (bottom {zwb[nlev-1]/100:.0f} m)")

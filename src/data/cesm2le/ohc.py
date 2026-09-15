@@ -41,6 +41,15 @@ def open_store(path: str) -> xr.Dataset:
     return xr.open_zarr(fs.get_mapper(path), consolidated=True)
 
 
+def layer_geometry(z_t_cm: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """(dz, z_w_bot) in cm from the level centres: POP centres are layer midpoints, so bottoms follow recursively."""
+    z_w_bot = np.empty_like(z_t_cm, dtype=float); top = 0.0
+    for k, zc in enumerate(z_t_cm):
+        z_w_bot[k] = 2 * zc - top; top = z_w_bot[k]
+    dz = np.diff(np.concatenate([[0.0], z_w_bot]))
+    return dz, z_w_bot
+
+
 def levels_to(depth_m: float, z_w_bot_cm: np.ndarray) -> int:
     """Number of top levels whose bottom lies at or above ``depth_m`` (POP stores z in cm)."""
     return int((z_w_bot_cm / 100.0 <= depth_m + 1e-6).sum())
@@ -58,7 +67,7 @@ def annual_mean(da: xr.DataArray, years: np.ndarray) -> xr.DataArray:
     yr = da["time"].dt.year
     da = da.assign_coords(year=("time", yr.values))
     out = da.groupby("year").mean("time")
-    return out.sel(year=years)
+    return out.reindex(year=years)                       # NaN for years the store does not cover
 
 
 def pop_to_cam_indices(tlat: np.ndarray, tlon: np.ndarray, lat: np.ndarray, lon: np.ndarray) -> np.ndarray:
