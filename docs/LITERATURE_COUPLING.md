@@ -49,3 +49,19 @@ None of these treat an OLS trend over w points; none appear in the climate-ML li
 3. Use PROCAST / Hoffman 2025 as the clean contrast (state target, persistence null); note the τ < T effective-lead caveat in one clause.
 4. Bommer 2024 + Mamalakis 2022: method agreement is the recommended fix; our figure shows agreement on a proxy → occlusion is not optional.
 5. DelSole & Tippett 2018 supplies the language for what survives: initial-value predictability of the demeaned residual after the arithmetic part is removed.
+
+
+## Added 2026-09-15 (evening): machine-learning leakage and initial-value predictability
+
+| paper | what it gives us | where used |
+|---|---|---|
+| Kaufman, Rosset, Perlich & Stitelman 2012, *ACM TKDD* 6(4):15, doi 10.1145/2382577.2382579 | canonical formulation of *leakage*: information about the target reaching the model by a route other than the one under test; detection and avoidance | §9 "A familiar problem in an unfamiliar place"; checklist |
+| Kapoor & Narayanan 2023, *Patterns* 4:100804, doi 10.1016/j.patter.2023.100804 | survey of 294 papers in 17 fields: leakage is the leading cause of over-optimistic ML-in-science results; taxonomy begins with "no clean separation between predictor and target"; model-info sheets as remedy | §9; motivates the checklist as an instance of theirs |
+| Archie 1981, *Ann. Surg.* 193:296, doi 10.1097/00000658-198103000-00008 | "mathematical coupling of data" in clinical physiology — shared measured quantity on both sides of a correlation | §3.2 / §9 naming |
+| Blanchard-Wrigglesworth et al. 2011a (J. Clim.), Day et al. 2014, Bushuk et al. 2020 (2024), Tietsche et al. 2014, Hoffman et al. 2025 | sea-ice initial-value predictability: state (thickness) memory of 1–3 yr; damped persistence as benchmark | §9: the 0.075 that survives the offset is this memory |
+| Meehl et al. 2011/2018, Yeager et al. 2015 (and Yeager 2018, Smith 2019 to add) | decadal GMT predictability from the ocean interior (heat uptake, AMOC), not the surface | §9: why OHC100 is both a GMT proxy and a memory carrier |
+| Tietsche et al. 2011 | sea-ice recovery = relaxation; the case where the coupling *is* the hypothesis | §9 exemption |
+
+Key distinction for the writing (Lauren, 2026-09-15): the trend-window coupling defeats the usual temporal-leakage check — no target year lies in the predictor's past — because the leak is through the algebra of the label, not through time. Say this once, plainly.
+
+Positioning on LB22 (agreed 2026-09-15): the GMT-state test bounds the coupling's contribution to *their* predictor at 0.25 r² with r unknown; it does **not** show their result is coupling. Saying more requires their predictor (OHC100 maps) → see `docs/OHC_PLAN.md`. Until then §9 says "the control was not applied and would be cheap to apply", nothing stronger.
