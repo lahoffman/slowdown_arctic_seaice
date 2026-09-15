@@ -37,7 +37,15 @@ def _jja_by_year(monthly: np.ndarray, t0: str, years: np.ndarray) -> np.ndarray:
 def observed_scalars(years: np.ndarray, forced_method: str, nsidc_events_file: Path, metrics_dir: Path,
                      ipo_file: Path, nino34_file: Path) -> Dict[str, np.ndarray]:
     """Observed sie_anom (forced removed as in the CNN pipeline), JJA IPO (filtered) and Niño3.4, each (nyear,)."""
-    out = {"sie_anom": oi.observed_sie_anomaly(nsidc_events_file, years, forced_method, metrics_dir)}
+    if forced_method == "linear":                       # NaN-safe detrend (the shared helper is not)
+        with xr.open_dataset(nsidc_events_file) as ds:
+            oy, osie = ds["yearice"].values.astype(int), ds["seaice"].values.astype(float)
+        sie = pd.Series(osie, index=oy).reindex(years).values; ok = np.isfinite(sie)
+        t = years - years.mean(); anom = np.full(years.size, np.nan)
+        anom[ok] = sie[ok] - np.polyval(np.polyfit(t[ok], sie[ok], 1), t[ok])
+        out = {"sie_anom": anom}
+    else:
+        out = {"sie_anom": oi.observed_sie_anomaly(nsidc_events_file, years, forced_method, metrics_dir)}
     with xr.open_dataset(ipo_file) as ds:
         out["ipo"] = _jja_by_year(ds["ipo_filtered"].values, ERSST_T0, years)
     with xr.open_dataset(nino34_file) as ds:
@@ -87,7 +95,8 @@ def observed_offset_z(years: np.ndarray, forced_method: str, nsidc_events_file: 
     with xr.open_dataset(labels_file) as ds:
         sigma = float(np.nanmean(ds["sigma"].values))
     if forced_method == "linear":
-        ref = np.polyval(np.polyfit(oy - oy.mean(), osie, 1), oy - oy.mean())
+        okf = np.isfinite(osie); ref = np.full(oy.size, np.nan)
+        ref[okf] = np.polyval(np.polyfit(oy[okf] - oy.mean(), osie[okf], 1), oy[okf] - oy.mean())
     else:
         m_sie, m_yrs = load_sie_monthly_files(str(metrics_dir), "SEP", variable="sie", start_year=1990, end_year=2100)
         sl = oi.GROUP_SLICES[forced_method.split("_", 1)[1]] if forced_method.startswith("group_") else slice(0, 100)
@@ -100,10 +109,17 @@ def observed_offset_z(years: np.ndarray, forced_method: str, nsidc_events_file: 
         if w[-1] > oy[-1] or w[0] < oy[0]:
             continue
         idx = np.searchsorted(oy, w)
-        if not np.isfinite(ref[idx]).all():
+        if not (np.isfinite(ref[idx]).all() and np.isfinite(osie[idx]).all()):
             continue
         z[i] = ((x @ osie[idx]) - (x @ ref[idx])) / (x @ x) / sigma
     return z
+
+
+def observed_slowdown_years(nsidc_events_file: Path):
+    """Onset years flagged as slowdowns in the NSIDC events file (v1 definition, observed linear-trend threshold)."""
+    with xr.open_dataset(nsidc_events_file) as ds:
+        y, s = ds["year"].values.astype(int), ds["slowdown"].values.astype(int)
+    return y[s == 1]
 
 
 def cnn_vote_fraction(pred_dir: Path, years: np.ndarray, threshold: float = 0.5) -> Optional[np.ndarray]:

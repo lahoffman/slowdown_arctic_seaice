@@ -62,6 +62,7 @@ def main():
     print(f"labels {key}: {labels.shape}, prevalence {labels.mean():.3f}; fitted {list(fits)}")
 
     obs_years = np.arange(a.obs_start, a.obs_end + 1)
+    slow_years = op.observed_slowdown_years(nsidc)
     for fm in a.forced:
         print(f"\n== forced reference: {fm}")
         obs = op.observed_scalars(obs_years, fm, nsidc, metrics_dir, paths.ERSST_IPO, paths.ERSST_NINO34)
@@ -84,7 +85,7 @@ def main():
             st.paper_rc()
             plot.plot_obs_predict(obs_years, obs, probs, z, frac, fm,
                                   paths.FIGURES_DIR / "diagnostics" / f"obs_predict_{key}_{fm}.png",
-                                  cnn_label=f"CNN votes ({a.tag}, {a.product})")
+                                  obs_slow_years=slow_years, cnn_label=f"CNN {a.tag} ({a.product})")
 
 
 if __name__ == "__main__":
