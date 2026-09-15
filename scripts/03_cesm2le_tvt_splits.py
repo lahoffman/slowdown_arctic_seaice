@@ -270,6 +270,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--aux', choices=['none', 'sie_anom'], default='none',
                         help="Auxiliary scalar input stored alongside the maps "
                              "(default none; 'sie_anom' = September SIE anomaly at onset).")
+    parser.add_argument('--mask-north', type=float, default=None, metavar='LAT',
+                        help='Set the SST anomaly to zero poleward of LAT (e.g. 50): removes every ice-state proxy '
+                             'from the map so the network can only use the extra-Arctic ocean (Phase 9, off1_pacific).')
     parser.add_argument('--openwater', action='store_true',
                         help='Zero the SST anomaly where JJA ice concentration > 0.15 '
                              '(needs 02_cesm2le_icemask.py; revision step 1.6).')
@@ -369,6 +372,7 @@ def main(args: argparse.Namespace) -> None:
     print(f'  SST window   : {args.sst_window} yr' + ('  (concurrent decade-mean)' if args.sst_window > 1 else ''))
     print(f'  Aux input    : {args.aux}')
     print(f'  Open water   : {"aice > %g masked" % args.ice_threshold if args.openwater else "no"}')
+    print(f'  Mask north   : {"lat >= %g°N zeroed" % args.mask_north if args.mask_north is not None else "no"}')
     print(f'  Tag          : {tag or "(none — original configuration)"}')
     print(f'  N splits     : {N_SPLITS}')
     print(f'  Output dir   : {out_dir}')
@@ -391,6 +395,15 @@ def main(args: argparse.Namespace) -> None:
     print(f'    SST shape : {sst.shape}  '
           f'(nens={sst.shape[0]}, nyear={sst.shape[1]}, '
           f'nx={sst.shape[2]}, ny={sst.shape[3]})')
+
+    # ------------------------------------------------------------------
+    # 1a.  Extra-Arctic variant: zero the anomaly poleward of --mask-north
+    # ------------------------------------------------------------------
+    if args.mask_north is not None:
+        with nc.Dataset(paths.CESM2LE_GRID_FILE) as g:
+            north = np.array(g['lat'][:]) >= args.mask_north
+        sst[:, :, north, :] = 0.0
+        print(f'    mask-north applied: anomaly set to zero on {north.mean():.3f} of rows (lat >= {args.mask_north:g}°N)')
 
     # ------------------------------------------------------------------
     # 1b.  Open-water variant: zero the anomaly under JJA sea ice (step 1.6)
@@ -529,6 +542,7 @@ def main(args: argparse.Namespace) -> None:
                 'sst_window':      int(args.sst_window),
                 'aux':             args.aux,
                 'openwater':       int(args.openwater),
+                'mask_north':      float(args.mask_north) if args.mask_north is not None else 0.0,
                 'ice_threshold':   float(args.ice_threshold) if args.openwater else 0.0,
                 'tag':             tag or '',
                 'member_groups':   str(MEMBER_GROUPS),

@@ -92,17 +92,18 @@ SI numbering (v2): S1 definition · S2 pooled σ/cap · S3 forcing groups · S4 
 - [~] 9.5 **Reframe (2026-09-15):** headline = (i) the coupling, derived and quantified; (ii) seven XAI methods agree with each other and still point at the proxy (occlusion prices it zero); (iii) the 11 % ledger with IPO ≥ ice extent on honest labels. "Skill before XAI" checklist → one paragraph in Conclusions, not the contribution. Abstract/§1 ¶3/§6 order to be rewritten on this basis.
 - [~] 9.6 Observations restored (`10_obs_baseline_predict.py`, `src/analysis/obs_predict.py`, `src/plotting/obs_predict.py`): logistic SIE / IPO / SIE+IPO / SIE+Pacific fitted on CESM2-LE (9 split-fits → band), applied to NSIDC SIE anomaly (forced removed as in the CNN pipeline) and ERSSTv5 JJA indices; observed offset-window z for verification where the decade is complete; off1 CNN vote fraction overlaid when present. *Code done; run on profx.* This is Fig. 8b: CNN and logistic side by side on the observed record.
 
-### Status of runs (2026-09-15)
+### Status of runs (2026-09-15, evening)
 - [x] `07_baselines.py --tag off1` — AUROC: SIE 0.612, IPO 0.658, Pacific 0.662, SIE+IPO 0.681, volume 0.651, SIE+vol+Pacific 0.686. F1 ≈ always-positive at this skill level → report AUROC + AUPRC.
-- [x] `04_cesm2le_cnn_regress.py --tag off1_aux --splits 2 5 7 --n-runs 2` — finished; `results/regression/off1_aux/regress_summary.md` to be read (cat it).
-- [x] 8.12 thickness maps (SEP, MAR): SIE + 20 PCs ≤ 0.10 → thickness *pattern* adds nothing at pan-Arctic decadal scale; closed.
-- [~] 5.3b `05b_xai_compare.py --tag rel_aux --split 2 --run 0`: LRP-z, α2β1, DeepTaylor, input×gradient ran (Arctic share 0.22–0.31 vs area 0.04; Pacific ≈ area); composite normalisation fixed (99th pct). IG / SmoothGrad / SHAP missing → rerun with `tee`, read `FAILED`/`skip` lines; `pip install shap`.
-- [~] off1 CNN: splits `off1` built (1990–2029); `off1_aux` exists. **Launch:** `LABELS=$LBL1 scripts/run_retrain.sh off1 off1_aux` in a screen, then `run_postprocess.sh off1 off1_aux` (occlusion, obs predictions × products × forced, LRP).
-- [ ] `10_obs_baseline_predict.py --labels-file $LBL1 --forced ensmean group_cmip6 group_smbb linear` (minutes; no CNN needed), then again with `--tag off1 --product oisst` after postprocess.
+- [x] 8.12 thickness maps (SEP, MAR): SIE + 20 PCs ≤ 0.10 → thickness *pattern* adds nothing; closed.
+- [~] `04_cesm2le_cnn_regress.py --tag off1_aux --splits 2 5 7 --n-runs 2` — **first run used the onset-inclusive labels by default (bug fixed: default is now the split's own labels file); result 0.286 vs 0.280 was the old target.** Rerun with the offset target in progress (screen `regress`). Read: `cat results/regression/off1_aux/regress_summary.md` (first line must name `…off1…`).
+- [~] **off1 CNN training running** (screen `off1`, `LABELS=$LBL1 scripts/run_retrain.sh off1 off1_aux`, log `results/logs/retrain_off1_*.log`; 90 models, overnight). Then `scripts/run_postprocess.sh off1 off1_aux` (occlusion, obs predictions × products × forced, LRP), then `make_figure.py S5 --baselines-tag off1 --tag off1`, `05b --tag off1_aux --split 2 --run 0`, `10_obs_baseline_predict.py … --tag off1 --product ersst|oisst`.
+- [~] 5.3b `05b_xai_compare.py --tag rel_aux --split 2 --run 0` rerunning (screen `xai`) with the new defaults: LRP-z, α2β1, DeepTaylor, input×gradient, SHAP; IG/SmoothGrad opt-in (ran >1 h at 9 cores and were killed); 4-thread cap; composite normalisation at the 99th pct. Check `grep -i "FAILED\|skip" results/logs/xai_compare_rel_aux.log`.
+- [x] **9.6 Observations (`10_obs_baseline_predict.py`) run for ERSST and OISST** — see REVISION_PLAN status block for the result. Defaults now: predictor anomaly per `--forced`; observed classification against an observation-only linear fit with the observed trend σ (`--label-ref linear --label-sigma obs`); calibrated probabilities. Outputs per product: `results/obs_predict/w10_off1/<product>/`, `diagnostics/obs_predict_w10_off1_<product>_<forced>[_sigmodel].png`.
 - [ ] `09_rile_compare.py --windows 3 5 10` after the six `07 --label-var` runs (8.11).
 - [ ] `09_sensitivity_sweep.py` offset option → S17 on honest labels.
 - [ ] Synthetic figures (arithmetic; frozen scalar) — `scripts/10_synthetic_checks.py`; AR(1) check: does the fitted SIE autocorrelation alone reproduce the offset R² 0.075?
-- [ ] GMST version of the coupling test for the LB22 sentence (GMST(t) vs 10-yr trend from t, onset-inclusive vs offset) — optional, one script.
+- [ ] GMST version of the coupling test for the LB22 sentence — optional, one script.
+- Housekeeping learned today: `device_commit` drops the exec bit → `chmod +x scripts/*.sh` after pulling shell scripts; every new screen needs `SLOWDOWN_DATA_ROOT`/`LBL1` (add both `export`s to `~/.bashrc`); name screens (`screen -S off1|regress|xai`); `ps -u $USER -o pid,etime,pcpu,args | grep python` is the truth about what is running.
 
 ### 8.11 RILE / short-window variant
 ```

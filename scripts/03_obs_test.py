@@ -43,11 +43,12 @@ def parse_args():
 def config_from_split(tag):
     """sst_lag / aux / openwater / ice_threshold recorded by 03_cesm2le_tvt_splits.py."""
     if tag is None:
-        return dict(sst_lag=0, sst_window=1, aux="none", openwater=False, ice_threshold=0.15)
+        return dict(sst_lag=0, sst_window=1, aux="none", openwater=False, ice_threshold=0.15, mask_north=0.0)
     with xr.open_dataset(paths.tvt_split_path(0, tag)) as ds:
         a = ds.attrs
     return dict(sst_lag=int(a.get("sst_lag", 0)), sst_window=int(a.get("sst_window", 1)), aux=str(a.get("aux", "none")),
-                openwater=bool(int(a.get("openwater", 0))), ice_threshold=float(a.get("ice_threshold", 0.15) or 0.15))
+                openwater=bool(int(a.get("openwater", 0))), ice_threshold=float(a.get("ice_threshold", 0.15) or 0.15),
+                mask_north=float(a.get("mask_north", 0.0) or 0.0))
 
 
 def main():
@@ -65,6 +66,7 @@ def main():
         forced_method=a.forced_method, ensmean_path=paths.CESM2LE_ENSMEAN_JJA,
         groupmean_path=paths.CESM2LE_GROUPMEAN_JJA, start_year=a.start_year, end_year=a.end_year,
         sst_lag=cfg["sst_lag"], sst_window=cfg["sst_window"], aux=cfg["aux"], openwater=cfg["openwater"], ice_threshold=cfg["ice_threshold"],
+        mask_north=cfg["mask_north"] or None,
         ice_product_path=paths.OISST_REGRIDDED, nsidc_events_file=paths.nsidc_sie_slowdown_events(9),
         cesm_metrics_dir=paths.CESM2LE_AICE_DIR / "metrics")
     oi.save_obs_input(res, out, dict(product=a.product, forced_method=a.forced_method, tag=a.tag or "",

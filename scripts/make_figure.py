@@ -59,8 +59,9 @@ class Data:
         if a.labels == "original":
             return paths.cesm2le_slowdown_file(a.variable, a.month)
         mode = "" if a.sigma_mode == "pooled" else f"_{a.sigma_mode}"
+        off = f"_off{a.trend_offset}" if a.trend_offset else ""
         return paths.CESM2LE_SLOWDOWNS_DIR / (
-            f"cesm2le_{a.variable}_slowdown_relative_{a.month}_w{a.window}_s{a.n_sigma:g}_{a.demean}{mode}_1990-2100.nc")
+            f"cesm2le_{a.variable}_slowdown_relative_{a.month}_w{a.window}_s{a.n_sigma:g}_{a.demean}{mode}{off}_1990-2100.nc")
 
     # -- CNN configuration (--tag): splits / predictions / metrics / attributions --
     @property
@@ -177,8 +178,9 @@ class Data:
                         y_score=score, threshold=thr, history=hist)
         return self.get("single", _load)
 
-    def occlusion(self, tags=("rel_base", "rel_aux", "rel_openwater", "rel_lag1", "rel_concurrent")):
-        """Stacked occlusion results for every configuration that has them."""
+    def occlusion(self, tags=None):
+        """Stacked occlusion results for every configuration that has them (``--occlusion-tags``)."""
+        tags = tags or self.a.occlusion_tags
         def _load():
             out = {}
             for t in tags:
@@ -417,6 +419,11 @@ def parse_args(argv=None):
     p.add_argument("--labels", default="relative", choices=["original", "relative"],
                    help="slowdown label definition (default: relative, the manuscript's)")
     p.add_argument("--window", type=int, default=10)
+    p.add_argument("--trend-offset", type=int, default=0,
+                   help="relative labels whose window starts k years after onset (file suffix _off<k>); 0 = onset-inclusive")
+    p.add_argument("--occlusion-tags", nargs="+",
+                   default=["rel_base", "rel_aux", "rel_openwater", "rel_lag1", "rel_concurrent"],
+                   help="configurations shown in the occlusion figure")
     p.add_argument("--n-sigma", type=float, default=1.0)
     p.add_argument("--demean", default="group", choices=["group", "all"])
     p.add_argument("--sigma-mode", default="pooled", choices=["pooled", "yearly"],

@@ -117,7 +117,8 @@ def prepare_obs_input(product_path: Path, landmask_path: Path, forced_method: st
                       ensmean_path: Path, groupmean_path: Path, start_year: int, end_year: int,
                       sst_lag: int = 0, sst_window: int = 1, aux: str = "none", openwater: bool = False,
                       ice_threshold: float = 0.15, ice_product_path: Optional[Path] = None,
-                      nsidc_events_file: Optional[Path] = None, cesm_metrics_dir: Optional[Path] = None) -> Dict:
+                      nsidc_events_file: Optional[Path] = None, cesm_metrics_dir: Optional[Path] = None,
+                      mask_north: Optional[float] = None) -> Dict:
     """
     Observed inputs for one CNN configuration, *unstandardised*.
 
@@ -141,6 +142,11 @@ def prepare_obs_input(product_path: Path, landmask_path: Path, forced_method: st
     residual = remove_forced(sst_jja, all_sst_years, forced_method, ensmean_path, groupmean_path)
     if sst_window > 1:
         residual = np.stack([np.nanmean(residual[k:k + sst_window], axis=0) for k in range(sst_years.size)])
+    if mask_north is not None:                                 # extra-Arctic configuration: same rows zeroed as in 03
+        from configs import paths as _paths
+        with nc.Dataset(_paths.CESM2LE_GRID_FILE) as g:
+            lat = np.array(g["lat"][:])
+        residual[:, lat >= mask_north, :] = 0.0
 
     aux_arr = None
     if aux == "sie_anom":
@@ -157,7 +163,8 @@ def prepare_obs_input(product_path: Path, landmask_path: Path, forced_method: st
         residual = np.where(icemask, 0.0, residual)
 
     return dict(residual=residual, aux=aux_arr, icemask=icemask, target_years=target_years,
-                sst_years=sst_years, sst_window=sst_window, landmask=landmask, forced_method=forced_method)
+                sst_years=sst_years, sst_window=sst_window, landmask=landmask, forced_method=forced_method,
+                mask_north=mask_north)
 
 
 def save_obs_input(res: Dict, out: Path, attrs: Dict) -> None:
