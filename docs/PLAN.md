@@ -102,7 +102,9 @@ SI numbering (v2): S1 definition · S2 pooled σ/cap · S3 forcing groups · S4 
 - [ ] `09_rile_compare.py --windows 3 5 10` after the six `07 --label-var` runs (8.11).
 - [ ] `09_sensitivity_sweep.py` offset option → S17 on honest labels.
 - [ ] Synthetic figures (arithmetic; frozen scalar) — `scripts/10_synthetic_checks.py`; AR(1) check: does the fitted SIE autocorrelation alone reproduce the offset R² 0.075?
-- [ ] GMST version of the coupling test for the LB22 sentence — optional, one script.
+- [x] GMT coupling check (`09_gmt_coupling_check.py`): GMT 0.26 → 0.03 → 0.00 vs SIE 0.28 → 0.075 → 0.04 — coupling dominates GMT even more; in main.tex §9 + Fig. gmtcoupling.
+- [ ] Queue (`scripts/run_queue.sh <train-pid>`): postprocess off1/off1_aux → XAI rel_aux, off1_aux → regression (offset target) → `off1_pacific` (--mask-north 50, aux) train/postprocess/XAI/regression → obs with CNN votes → event stats → `make_figures_aies.py`. **The off1_pacific AUROC vs 0.662 (SIE+Pacific logistic) is the paper's positive/negative result.**
+- [ ] `phase_all` on offset labels (P(slowdown | IPO phase), all slowdowns) → ledger section; drop TP-conditioned Fig. 3 / S14.
 - Housekeeping learned today: `device_commit` drops the exec bit → `chmod +x scripts/*.sh` after pulling shell scripts; every new screen needs `SLOWDOWN_DATA_ROOT`/`LBL1` (add both `export`s to `~/.bashrc`); name screens (`screen -S off1|regress|xai`); `ps -u $USER -o pid,etime,pcpu,args | grep python` is the truth about what is running.
 
 ### 8.11 RILE / short-window variant

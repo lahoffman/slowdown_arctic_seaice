@@ -83,7 +83,7 @@ def main():
         from src.plotting import style as st
         from src.plotting.style import plt
         st.paper_rc()
-        fig, ax = plt.subplots(figsize=(7.5, 4.8))
+        fig, ax = plt.subplots(figsize=(9, 5))
         x = np.arange(len(a.offsets)); w = 0.36
         for i, (name, col) in enumerate((("GMT", st.ORANGE), ("SIE", st.BLUE))):
             med = [np.nanmedian(res[name][o]) for o in a.offsets]
@@ -94,7 +94,7 @@ def main():
         ax.set_xticks(x); ax.set_xticklabels([f"window starts t+{o}" for o in a.offsets])
         ax.set_ylabel("test R² of the decadal trend anomaly"); ax.set_ylim(0, None)
         ax.legend(frameon=False, loc="upper right"); st.tidy(ax)
-        ax.set_title("The onset-year coupling in two slowdown problems (CESM2-LE)", loc="left", weight="bold")
+        ax.set_title("Onset-year coupling: GMT vs sea-ice slowdowns (CESM2-LE)", loc="left", weight="bold")
         out = paths.FIGURES_DIR / "diagnostics" / "gmt_coupling_check.png"
         fig.tight_layout(); fig.savefig(out, dpi=200); print(f"  figure → {out}")
 
