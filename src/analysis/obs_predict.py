@@ -36,6 +36,18 @@ def _jja_by_year(monthly: np.ndarray, t0: Optional[str], years: np.ndarray, time
     return s.groupby(s.index.year).mean().reindex(years).values
 
 
+def _nsidc_series(nsidc_events_file: Path) -> Tuple[np.ndarray, np.ndarray]:
+    with xr.open_dataset(nsidc_events_file) as ds:
+        return ds["yearice"].values.astype(int), ds["seaice"].values.astype(float)
+
+
+def _poly_reference(years: np.ndarray, x: np.ndarray, deg: int) -> np.ndarray:
+    """Polynomial fit of degree ``deg`` to the finite values of x(years); NaN where x is missing."""
+    ok = np.isfinite(x); t = years - years.mean(); ref = np.full(years.size, np.nan)
+    ref[ok] = np.polyval(np.polyfit(t[ok], x[ok], deg), t[ok])
+    return ref
+
+
 def _index_series(f: Path, var: str, years: np.ndarray, t0: Optional[str]) -> np.ndarray:
     """JJA-by-year of one index file; uses its ``time``/``dates`` coordinate when present (OISST), else ``t0`` (ERSST, 1854-01)."""
     with xr.open_dataset(f) as ds:
@@ -50,13 +62,10 @@ def _index_series(f: Path, var: str, years: np.ndarray, t0: Optional[str]) -> np
 def observed_scalars(years: np.ndarray, forced_method: str, nsidc_events_file: Path, metrics_dir: Path,
                      ipo_file: Path, nino34_file: Path, index_t0: Optional[str] = ERSST_T0) -> Dict[str, np.ndarray]:
     """Observed sie_anom (forced removed as in the CNN pipeline), JJA IPO (filtered) and Niño3.4, each (nyear,)."""
-    if forced_method == "linear":                       # NaN-safe detrend (the shared helper is not)
-        with xr.open_dataset(nsidc_events_file) as ds:
-            oy, osie = ds["yearice"].values.astype(int), ds["seaice"].values.astype(float)
-        sie = pd.Series(osie, index=oy).reindex(years).values; ok = np.isfinite(sie)
-        t = years - years.mean(); anom = np.full(years.size, np.nan)
-        anom[ok] = sie[ok] - np.polyval(np.polyfit(t[ok], sie[ok], 1), t[ok])
-        out = {"sie_anom": anom}
+    if forced_method in ("linear", "quadratic"):         # observation-only reference (NaN-safe)
+        oy, osie = _nsidc_series(nsidc_events_file)
+        sie = pd.Series(osie, index=oy).reindex(years).values
+        out = {"sie_anom": sie - _poly_reference(years, sie, 1 if forced_method == "linear" else 2)}
     else:
         out = {"sie_anom": oi.observed_sie_anomaly(nsidc_events_file, years, forced_method, metrics_dir)}
     out["ipo"] = _index_series(ipo_file, "ipo_filtered", years, index_t0)
@@ -77,53 +86,62 @@ def fit_predictors(fields: Dict[str, np.ndarray], labels: np.ndarray, years: np.
             ok = np.isfinite(X).all(1)
             mu, sd = X[ok].mean(0), X[ok].std(0) + 1e-12
             clf = LogisticRegression(class_weight="balanced", max_iter=2000).fit((X[ok] - mu) / sd, y[ok])
+            clf.prevalence_ = float(y[ok].mean())            # for calibration of the balanced fit
             fits.append((mu, sd, clf))
         out[name] = fits
     return out
 
 
-def predict_observed(fits, obs: Dict[str, np.ndarray], feature_sets=FEATURE_SETS) -> Dict[str, np.ndarray]:
-    """P(slowdown) for every year and split-fit → {set: (n_fits, nyear)}; NaN where an input is missing."""
+def calibrate(p_balanced: np.ndarray, prevalence: float) -> np.ndarray:
+    """Undo class balancing: a balanced fit scales the odds by (1−π)/π, so multiply them back by π/(1−π)."""
+    odds = p_balanced / (1 - p_balanced) * prevalence / (1 - prevalence)
+    return odds / (1 + odds)
+
+
+def predict_observed(fits, obs: Dict[str, np.ndarray], feature_sets=FEATURE_SETS, calibrated: bool = True
+                     ) -> Dict[str, np.ndarray]:
+    """
+    P(slowdown) for every year and split-fit → {set: (n_fits, nyear)}; NaN where an input is missing.
+    ``calibrated`` converts the balanced-fit output to a probability at the training prevalence
+    (0.5 balanced ≙ the base rate), which is what a reader should compare with the base rate line.
+    """
     out = {}
     for name, feats in feature_sets.items():
         X = np.column_stack([obs[f] for f in feats]); ok = np.isfinite(X).all(1)
         P = np.full((len(fits[name]), X.shape[0]), np.nan)
         for i, (mu, sd, clf) in enumerate(fits[name]):
-            P[i, ok] = clf.predict_proba((X[ok] - mu) / sd)[:, 1]
+            p = clf.predict_proba((X[ok] - mu) / sd)[:, 1]
+            P[i, ok] = calibrate(p, clf.prevalence_) if calibrated else p
         out[name] = P
     return out
 
 
-def observed_offset_z(years: np.ndarray, forced_method: str, nsidc_events_file: Path, metrics_dir: Path,
-                      labels_file: Path, window: int = 10, offset: int = 1) -> np.ndarray:
+def observed_offset_z(years: np.ndarray, nsidc_events_file: Path, labels_file: Path, window: int = 10,
+                      offset: int = 1, label_ref: str = "linear", sigma_from: str = "model") -> Tuple[np.ndarray, float]:
     """
-    Observed trend anomaly z at onset t: OLS slope of NSIDC September SIE over t+offset … t+offset+window−1
-    minus the same slope of the (mean- and trend-corrected) forced reference, over the model's pooled σ.
-    NaN where the window is not yet observed.
+    Observed trend-anomaly z at onset t: OLS slope of NSIDC September SIE over t+offset … t+offset+window−1
+    minus the slope of an observation-only reference (``label_ref`` 'linear' or 'quadratic' fit to the full
+    NSIDC record), divided by σ — the model's pooled σ (``sigma_from='model'``, the paper's definition) or the
+    standard deviation of the observed trend anomalies (``'obs'``, as in v1). NaN where the window is not
+    yet observed. Returns (z, sigma).
     """
-    with xr.open_dataset(nsidc_events_file) as ds:
-        oy, osie = ds["yearice"].values.astype(int), ds["seaice"].values.astype(float)
-    with xr.open_dataset(labels_file) as ds:
-        sigma = float(np.nanmean(ds["sigma"].values))
-    if forced_method == "linear":
-        okf = np.isfinite(osie); ref = np.full(oy.size, np.nan)
-        ref[okf] = np.polyval(np.polyfit(oy[okf] - oy.mean(), osie[okf], 1), oy[okf] - oy.mean())
-    else:
-        m_sie, m_yrs = load_sie_monthly_files(str(metrics_dir), "SEP", variable="sie", start_year=1990, end_year=2100)
-        sl = oi.GROUP_SLICES[forced_method.split("_", 1)[1]] if forced_method.startswith("group_") else slice(0, 100)
-        sel = np.isin(oy, m_yrs); forced = m_sie[sl].mean(0)[np.isin(m_yrs, oy[sel])]
-        ref = np.full(oy.size, np.nan)
-        ref[sel], _, _ = _correct_forced_mean_and_trend(osie[sel], forced, np.arange(sel.sum(), dtype=float))
-    z = np.full(years.size, np.nan); x = np.arange(window) - (window - 1) / 2
+    oy, osie = _nsidc_series(nsidc_events_file)
+    ref = _poly_reference(oy, osie, {"linear": 1, "quadratic": 2}[label_ref])
+    x = np.arange(window) - (window - 1) / 2
+    anom = np.full(years.size, np.nan)
     for i, t in enumerate(years):
         w = np.arange(t + offset, t + offset + window)
         if w[-1] > oy[-1] or w[0] < oy[0]:
             continue
         idx = np.searchsorted(oy, w)
-        if not (np.isfinite(ref[idx]).all() and np.isfinite(osie[idx]).all()):
-            continue
-        z[i] = ((x @ osie[idx]) - (x @ ref[idx])) / (x @ x) / sigma
-    return z
+        if np.isfinite(osie[idx]).all() and np.isfinite(ref[idx]).all():
+            anom[i] = ((x @ osie[idx]) - (x @ ref[idx])) / (x @ x)
+    if sigma_from == "model":
+        with xr.open_dataset(labels_file) as ds:
+            sigma = float(np.nanmean(ds["sigma"].values))
+    else:
+        sigma = float(np.nanstd(anom))
+    return anom / sigma, sigma
 
 
 def observed_slowdown_years(nsidc_events_file: Path):
@@ -148,10 +166,12 @@ def cnn_vote_fraction(pred_dir: Path, years: np.ndarray, threshold: float = 0.5)
     return pd.Series(frac, index=yrs).reindex(years).values
 
 
-def summary_markdown(years, obs, probs, z, frac, forced_method, claim=(2016, 2025)) -> str:
+def summary_markdown(years, obs, probs, z, frac, forced_method, claim=(2016, 2025), base_rate=0.17,
+                     label_note="") -> str:
     c0, c1 = claim; sel = (years >= c0) & (years <= c1)
-    lines = [f"# Observed baseline predictions — forced reference `{forced_method}`\n",
-             "P(slowdown in t+1…t+10) from logistic fits on CESM2-LE (median over 9 split-fits); observed offset z where the decade is complete.\n",
+    lines = [f"# Observed baseline predictions — predictor anomaly reference `{forced_method}`\n",
+             f"Calibrated P(slowdown in t+1…t+10) from logistic fits on CESM2-LE (median over 9 split-fits; base rate {base_rate:.2f}); "
+             f"observed offset z where the decade is complete ({label_note}).\n",
              "| onset t | SIE anom [Mkm²] | IPO | Niño3.4 | " + " | ".join(probs) + (" | CNN votes" if frac is not None else "") + " | obs z |",
              "|---|---|---|---|" + "---|" * len(probs) + ("---|" if frac is not None else "") + "---|"]
     for i, t in enumerate(years):
@@ -162,5 +182,5 @@ def summary_markdown(years, obs, probs, z, frac, forced_method, claim=(2016, 202
         row.append(f"{z[i]:+.2f}" if np.isfinite(z[i]) else "—")
         lines.append("| " + " | ".join(row) + " |")
     lines.append(f"\nMean P over {c0}–{c1}: " + ", ".join(f"{p} {np.nanmedian(probs[p][:, sel], 0).mean():.2f}" for p in probs)
-                 + f"; base rate 0.17.\n")
+                 + f"; base rate {base_rate:.2f}.\n")
     return "\n".join(lines) + "\n"

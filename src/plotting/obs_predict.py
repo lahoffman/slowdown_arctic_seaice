@@ -19,19 +19,20 @@ C_CNN = "#8b1a1a"
 
 def plot_obs_predict(years, obs: Dict[str, np.ndarray], probs: Dict[str, np.ndarray], z: np.ndarray,
                      frac: Optional[np.ndarray], forced_method: str, out_png, obs_slow_years=(),
-                     threshold: float = 0.5, frac_threshold: float = 0.15, future=(2015.5, 2025.5),
-                     cnn_label: str = "CNN") -> None:
+                     base_rate: float = 0.17, frac_threshold: float = 0.15, future=(2015.5, 2025.5),
+                     cnn_label: str = "CNN", label_note: str = "linear obs. reference", product: str = "ersst") -> None:
     """
     Fig. 4 layout. (a) logistic P(slowdown in t+1…t+10) per baseline (band = 9 split-fits) [+ CNN vote
     fraction as bars]; (b) SIE anomaly; (c) IPO; (d) Niño3.4. Shading: observed slowdown onsets by the v1
-    linear-threshold definition (blue) and by the offset z > 1 definition against this forced reference (amber);
+    linear-threshold definition (blue) and by the offset z > 1 test against an observation-only reference (amber);
     grey = window extends past the record.
     """
-    idx = {"sie_anom": (f"Sept SIE anomaly\n[10⁶ km²]", ()), "ipo": ("IPO index [°C]", ()), "nino34": ("Niño 3.4 [°C]", (0.4, -0.4))}
+    idx = {"sie_anom": (f"Sept SIE anomaly\n[10⁶ km²]\n({forced_method} removed)", ()),
+           "ipo": (f"IPO index [°C]\n({product.upper()})", ()), "nino34": (f"Niño 3.4 [°C]\n({product.upper()})", (0.4, -0.4))}
     fig, axes = plt.subplots(1 + len(idx), 1, figsize=(11, 2.3 * (1 + len(idx)) + 1.2), sharex=True,
                              gridspec_kw=dict(height_ratios=[1.7] + [1] * len(idx)))
     z_slow = years[np.isfinite(z) & (z > 1)]
-    yes = np.nanmedian(probs["logit_sie_ipo"], 0) >= threshold if "logit_sie_ipo" in probs else None
+    yes = np.nanmedian(probs["logit_sie_ipo"], 0) >= base_rate if "logit_sie_ipo" in probs else None
 
     def shade(ax, with_yes=False):
         ax.axvspan(*future, color=st.GRID, alpha=0.45, zorder=0)
@@ -52,8 +53,10 @@ def plot_obs_predict(years, obs: Dict[str, np.ndarray], probs: Dict[str, np.ndar
         col = st.CATEGORICAL[i % len(st.CATEGORICAL)]
         ax.fill_between(years, np.nanmin(P, 0), np.nanmax(P, 0), color=col, alpha=0.15, lw=0)
         ax.plot(years, np.nanmedian(P, 0), color=col, lw=2, label=f"logistic: {LABELS.get(name, name)}", zorder=3)
-    ax.axhline(threshold, color=st.INK, ls="--", lw=0.8)
-    ax.set_ylim(0, 1.02); ax.set_ylabel("P(slowdown in\nt+1 … t+10)")
+    ax.axhline(base_rate, color=st.INK, ls="--", lw=0.8)
+    ax.text(years[0] - 0.3, base_rate + 0.01, f"base rate {base_rate:.2f}", fontsize=10, color=st.INK, va="bottom")
+    top = max(0.6, float(np.nanmax([np.nanmax(P) for P in probs.values()])) * 1.15, float(np.nanmax(frac)) * 1.05 if frac is not None else 0)
+    ax.set_ylim(0, min(1.02, top)); ax.set_ylabel("calibrated\nP(slowdown in t+1 … t+10)")
     ax.legend(frameon=False, loc="upper right", ncol=2, fontsize=11)
     st.panel_label(ax, "(a)")
     for k, (key, (ylabel, refs)) in enumerate(idx.items(), start=1):
@@ -62,9 +65,9 @@ def plot_obs_predict(years, obs: Dict[str, np.ndarray], probs: Dict[str, np.ndar
         st.panel_label(ax, f"({'abcdefg'[k]})")
     axes[-1].set_xlabel("onset year t")
     handles = [Patch(color=st.C_SLOW, alpha=0.3, label="observed slowdown, v1 definition (linear trend threshold)"),
-               Patch(color=st.C_EVENT, alpha=0.4, label=f"observed slowdown, offset z > 1 vs {forced_method} reference"),
+               Patch(color=st.C_EVENT, alpha=0.4, label=f"observed slowdown, offset window z > 1 ({label_note})"),
                Patch(color=st.GRID, label="window extends past record"),
-               Line2D([], [], color=C_CNN, ls="--", label=f"SIE + IPO logistic ≥ {threshold}")]
+               Line2D([], [], color=C_CNN, ls="--", label="SIE + IPO logistic above base rate")]
     fig.legend(handles=handles, frameon=False, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 1.0), fontsize=11)
     for ax in axes:
         st.tidy(ax)
