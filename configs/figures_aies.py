@@ -21,6 +21,7 @@ MAIN = {
     "fig_S5.pdf":              dict(kind="make_figure", ids=["S5"], args=["--baselines-tag", "off1_pacific", "--tag", "off1_pacific"] + OFF1,
                                     needs="07 --tag off1_pacific (run_retrain) — the CNN row is the extra-Arctic network; off1/off1_aux rows via the baselines table"),
     "fig_occlusion.pdf":       dict(kind="make_figure", ids=["occlusion"], args=ALL_TAGS, needs="08_occlusion for off1 tags"),
+    "fig_ledger.pdf":          dict(kind="make_figure", ids=["ledger"], args=[], needs="09_ohc_ledger --target gmt/sie --depth 100 --cv (done)"),
     "fig_learning_curves.pdf": dict(kind="make_figure", ids=["learning_curves"], args=CNN, needs="off1_aux training histories"),
     "fig_S19.pdf":             dict(kind="make_figure", ids=["S19"], args=[], needs="09_obs_forced_removal (done)"),
     "interannual_check.png":         dict(kind="diagnostic", src="interannual_check.png", needs="09_interannual_check (done)"),

@@ -57,3 +57,29 @@ def plot_ledger(delta: dict, corr_map, lat, lon, out_png, base_r2: float, state_
 
 
 plot_sie_ledger = plot_ledger          # backward-compatible name
+
+
+def fig_ledger_compare(panels: dict, vmax: float = 0.3) -> plt.Figure:
+    """
+    Manuscript figure: one row per target (GMT, SIE). Left, added test R² beyond the target's own state
+    (bars = median over member blocks, dots = blocks); right, correlation of the stage-1 residual with the
+    OHC anomaly at onset. ``panels[target] = dict(delta, corr, lat, lon, base_r2, state_label, ohc_label)``.
+    """
+    n = len(panels)
+    fig = plt.figure(figsize=(14, 5 * n)); gs = fig.add_gridspec(n, 2, width_ratios=[1, 1.45], hspace=0.4, wspace=0.2)
+    allv = np.concatenate([np.concatenate(list(p["delta"].values())) for p in panels.values()])
+    xlim = (min(np.nanmin(allv), 0) * 1.1 - 0.005, max(np.nanmax(allv), 0) * 1.1 + 0.005)
+    for i, (tgt, p) in enumerate(panels.items()):
+        ax = fig.add_subplot(gs[i, 0])
+        names = list(p["delta"]); med = [np.nanmedian(p["delta"][k]) for k in names]
+        colors = [st.ORANGE if k.startswith("IPO") else st.BLUE for k in names]
+        ax.barh(names, med, color=colors)
+        for j, k in enumerate(names):
+            ax.scatter(p["delta"][k], np.full(len(p["delta"][k]), j), s=14, color=st.INK, alpha=0.6, zorder=3)
+        ax.axvline(0, color=st.INK, lw=0.6); ax.set_xlim(*xlim)
+        ax.set_xlabel(f"added test R² of {p['ohc_label']} beyond the {p['state_label']} (state alone: R² {p['base_r2']:.3f})")
+        st.panel_label(ax, f"({'abcd'[2 * i]}) {tgt}: OHC at onset, added skill"); st.tidy(ax)
+        ax2 = maps.map_axes(fig, gs[i, 1])
+        maps.global_map(ax2, p["lon"], p["lat"], p["corr"], "RdBu_r", -vmax, vmax, cbar_label="correlation")
+        st.panel_label(ax2, f"({'abcd'[2 * i + 1]}) {tgt}: corr(residual trend, OHC at onset)")
+    return fig

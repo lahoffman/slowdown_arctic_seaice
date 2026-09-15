@@ -31,6 +31,7 @@ from src.analysis import composites as cmp, phase_stats as ps
 from src.cnn.splits import load_tvt_split
 from src.data.cesm2le.slowdowns import load_sie_monthly_files
 from src.plotting import paper, style as st
+from src.plotting import ohc as ohc_plot
 
 MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 N_SPLITS, N_SEEDS, BLOCK_SIZE, START_YEAR = 9, 5, 10, 1990
@@ -191,6 +192,27 @@ class Data:
                 raise FileNotFoundError("no results/occlusion/<tag>/occlusion_split*.nc")
             return out
         return self.get("occlusion", _load)
+
+    def ohc_ledger(self):
+        """Per-target OHC ledger results (09_ohc_ledger.py) for the manuscript comparison figure."""
+        def _load():
+            import pandas as pd
+            spec = {"GMT": ("gmt", "annual", "GMT state"), "SIE": ("sie", "JJA", "ice state")}
+            out = {}
+            for tgt, (key, months, state_label) in spec.items():
+                d = paths.RESULTS_DIR / "ohc" / f"{key}_ledger_{self.a.ohc_depth}_{months}"
+                csv = d / "ledger.csv" if (d / "ledger.csv").exists() else d / "sie_ledger.csv"
+                if not csv.exists():
+                    raise FileNotFoundError(f"{csv} (run 09_ohc_ledger.py --target {key} --depth {self.a.ohc_depth} --cv)")
+                df = pd.read_csv(csv)
+                order = df.groupby("predictor")["delta"].median().sort_values(ascending=False).index
+                with xr.open_dataarray(d / "residual_ohc_corr.nc") as da:
+                    corr, lat, lon = da.values, da["lat"].values, da["lon"].values
+                out[tgt] = dict(delta={k: df[df.predictor == k]["delta"].values for k in order}, corr=corr, lat=lat, lon=lon,
+                                base_r2=float(np.nanmedian(df["r2_full"] - df["delta"])), state_label=state_label,
+                                ohc_label=f"{months} OHC{self.a.ohc_depth}")
+            return out
+        return self.get("ohc_ledger", _load)
 
     def histories(self):
         """Training histories of every saved model for this tag."""
@@ -408,6 +430,7 @@ FIGURES = {
     "learning_curve": (lambda d: paper.fig_learning_curve(d.single()["history"]), "loss vs epoch, one CNN"),
     "learning_curves": (lambda d: paper.fig_learning_curves(d.histories()), "loss vs epoch, all 45 CNNs of a tag"),
     "occlusion": (lambda d: paper.fig_occlusion(d.occlusion()), "region occlusion, all configurations"),
+    "ledger":    (lambda d: ohc_plot.fig_ledger_compare(d.ohc_ledger()), "OHC memory beyond the state: GMT vs SIE (09_ohc_ledger.py)"),
 }
 
 
@@ -446,6 +469,7 @@ def parse_args(argv=None):
     p.add_argument("--n-boot", type=int, default=2000)
     p.add_argument("--baselines-tag", default=None,
                    help="results/baselines/<tag> to plot in S3 (default: derived from --labels)")
+    p.add_argument("--ohc-depth", type=int, default=100, help="OHC integration depth for the ledger figure")
     p.add_argument("--suffix", default="", help="appended to output names, e.g. _orig")
     p.add_argument("--fmt", default="png", choices=["png", "pdf", "svg"])
     p.add_argument("--dpi", type=int, default=200)
