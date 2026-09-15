@@ -10,7 +10,7 @@ Resumable: members already in the per-member cache (…/ohc/cache/) are skipped.
 Usage:
   python scripts/01_cesm2le_ohc.py --list                     # can we see the store? which TEMP entries, chunking?
   python scripts/01_cesm2le_ohc.py --depth 100 --group cmip6 --members 0 1      # smoke test, two members
-  python scripts/01_cesm2le_ohc.py --depth 100 300 --group cmip6 smbb           # everything (hours; network-bound)
+  python scripts/01_cesm2le_ohc.py --depth 100 300                              # cmip6 group, both depths (hours; network-bound)
 Needs: pip install intake-esm s3fs zarr dask
 """
 
@@ -35,7 +35,8 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--list", action="store_true", help="print the catalog's TEMP entries and one store's chunking, then exit")
     p.add_argument("--depth", type=int, nargs="+", default=[100], help="integration depths in m (100 300 700)")
-    p.add_argument("--group", nargs="+", default=["cmip6", "smbb"], choices=["cmip6", "smbb"])
+    p.add_argument("--group", nargs="+", default=["cmip6"], choices=["cmip6", "smbb"],
+                   help="forcing group(s); the AWS store has no smbb historical TEMP, so default is cmip6 only")
     p.add_argument("--members", type=int, nargs="+", default=None, help="member indices within the group (default all 50)")
     p.add_argument("--start-year", type=int, default=1990); p.add_argument("--end-year", type=int, default=2100)
     p.add_argument("--workers", type=int, default=4, help="dask threads for the S3 reads (network-bound)")
@@ -96,7 +97,7 @@ def main():
             print(f"  [note] no historical store for {forcing}: years before 2015 will be NaN")
         for depth in a.depth:
             nlev = O.levels_to(depth, zwb)
-            print(f"  depth {depth} m → top {nlev} levels (bottom {zwb[nlev-1]/100:.0f} m)")
+            print(f"  OHC{depth}: integrating the surface to {zwb[nlev-1]/100:.0f} m (top {nlev} levels); the other {zwb.size - nlev} levels are discarded")
             arrays, ids = [], []
             for m in sel:
                 mid = str(members[m]); f = cache / f"ohc{depth}_{forcing}_{mid}.npy"
