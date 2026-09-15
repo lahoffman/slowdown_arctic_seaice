@@ -2,10 +2,11 @@
 """
 01_cesm2le_ohc.py — annual upper-ocean heat content for CESM2-LE from the AWS Zarr store (no TEMP download).
 
-Per forcing group (cmip6 → members 0–49, smbb → 50–99) and depth, writes
-  DATA_ROOT/cesm2le/ohc/ohc<DEPTH>_cesmle_<group>members_1990-2100.nc     variable ohc (nens, nyear, lat, lon), J m^-2
-on the CAM grid, with member_id recorded so the ordering can be checked against the SST/SIE files.
-Resumable: members already in the per-member cache (…/ohc/cache/) are skipped.
+Per forcing group (cmip6 → members 0–49, smbb → 50–99) and depth, writes MONTHLY fields
+  DATA_ROOT/cesm2le/ohc/ohc<DEPTH>_cesmle_<group>members_mon_1990-2100.nc   variable ohc (nens, time, lat, lon), J m^-2
+on the CAM grid (time = year, month coordinates), with member_id recorded so the ordering can be checked against
+the SST/SIE files. Annual or JJA means are taken by the analysis scripts (--months). ~300 MB per member and depth.
+Resumable: members already in the per-member cache (…/ohc/cache/*_mon.npy) are skipped.
 
 Usage:
   python scripts/01_cesm2le_ohc.py --list                     # can we see the store? which TEMP entries, chunking?
@@ -99,26 +100,32 @@ def main():
         for d, n in nlev.items():
             print(f"  OHC{d}: integrating the surface to {zwb[n-1]/100:.0f} m (top {n} levels); the other {zwb.size - n} levels are discarded")
         arrays, ids = {d: [] for d in a.depth}, []
+        tfile = cache / f"time_{forcing}.npz"
         for m in sel:
-            mid = str(members[m]); files = {d: cache / f"ohc{d}_{forcing}_{mid}.npy" for d in a.depth}
+            mid = str(members[m]); files = {d: cache / f"ohc{d}_{forcing}_{mid}_mon.npy" for d in a.depth}
             todo = {d: nlev[d] for d in a.depth if not files[d].exists()}
             if todo:
-                pop = O.member_series(ds_h, ds_s, mid, todo, dz, years)           # one pass, all missing depths
+                pop, yr, mo = O.member_series(ds_h, ds_s, mid, todo, dz, years)   # one pass, all missing depths, monthly
                 for d, arr in pop.items():
                     np.save(files[d], O.regrid(arr, idx, (lat.size, lon.size), landmask))
+                if not tfile.exists():
+                    np.savez(tfile, year=yr, month=mo)
             for d in a.depth:
-                arrays[d].append(np.load(files[d]))
+                arrays[d].append(np.load(files[d], mmap_mode="r"))
             ids.append(mid)
             print(f"    {forcing} member {m:2d} {mid}: done ({', '.join(f'OHC{d}' for d in a.depth)})", flush=True)
+        t = np.load(tfile); yr, mo = t["year"], t["month"]
         for d in a.depth:
-            out = xr.Dataset({"ohc": (("nens", "nyear", "lat", "lon"), np.stack(arrays[d]))},
-                             coords={"nyear": years, "lat": lat, "lon": lon, "member_id": ("nens", ids)})
-            out["ohc"].attrs.update(units="J m-2", long_name=f"ocean heat content 0-{d} m, annual mean",
+            data = np.stack([np.asarray(x) for x in arrays[d]])
+            out = xr.Dataset({"ohc": (("nens", "time", "lat", "lon"), data)},
+                             coords={"year": ("time", yr), "month": ("time", mo), "lat": lat, "lon": lon, "member_id": ("nens", ids)})
+            out["ohc"].attrs.update(units="J m-2", long_name=f"ocean heat content 0-{d} m, monthly mean",
                                     reference_temperature_C=O.T_REF_C, rho=O.RHO, cp=O.CP, n_levels=nlev[d])
             out.attrs.update(source="ncar-cesm2-lens Zarr (AWS)", forcing_variant=forcing,
                              group=O.GROUP_OF_FORCING[forcing], note="POP T-grid → CAM grid, nearest neighbour; land NaN")
-            fn = OUT_DIR / f"ohc{d}_cesmle_{O.GROUP_OF_FORCING[forcing]}members_{years[0]}-{years[-1]}.nc"
-            out.to_netcdf(fn, encoding={"ohc": {"zlib": True, "complevel": 4}}); print(f"  → {fn}")
+            fn = OUT_DIR / f"ohc{d}_cesmle_{O.GROUP_OF_FORCING[forcing]}members_mon_{years[0]}-{years[-1]}.nc"
+            out.to_netcdf(fn, encoding={"ohc": {"zlib": True, "complevel": 4, "chunksizes": (1, 12, lat.size, lon.size)}})
+            print(f"  → {fn}")
 
 
 if __name__ == "__main__":

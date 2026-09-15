@@ -11,7 +11,7 @@ POP gx1v7: 10-m layers to 160 m, then thickening; 0-100 m = 10 levels, 0-300 m ~
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -91,11 +91,12 @@ def regrid(field: np.ndarray, idx: np.ndarray, shape: Tuple[int, int], landmask:
 
 
 def member_series(ds_hist: xr.Dataset, ds_ssp: xr.Dataset, member: str, n_levels: Dict[int, int], dz_cm: np.ndarray,
-                  years: np.ndarray) -> Dict[int, np.ndarray]:
+                  years: np.ndarray) -> Tuple[Dict[int, np.ndarray], np.ndarray, np.ndarray]:
     """
-    Annual OHC (nyear, nlat, nlon) for one member and every requested depth, from ONE pass over the
-    historical + SSP stores (chunks carry all 60 levels, so all integrals are taken from the same read).
-    n_levels: {depth_m: number of top levels}. Computes here.
+    MONTHLY OHC (nmonth, nlat, nlon) for one member and every requested depth, from ONE pass over the
+    historical + SSP stores (chunks carry all 60 levels, so all integrals come from the same read).
+    n_levels: {depth_m: number of top levels}. Returns ({depth: array}, year_of_month, month_of_month).
+    Annual / seasonal means are taken later by the analysis scripts (``seasonal_mean``).
     """
     parts = {d: [] for d in n_levels}
     for ds in (ds_hist, ds_ssp):
@@ -107,5 +108,18 @@ def member_series(ds_hist: xr.Dataset, ds_ssp: xr.Dataset, member: str, n_levels
     stacked = xr.concat([xr.concat(parts[d], dim="time") if len(parts[d]) > 1 else parts[d][0] for d in n_levels],
                         dim=xr.DataArray(list(n_levels), dims="depth", name="depth"))
     stacked = stacked.sel(time=slice(f"{years[0]}-01-01", f"{years[-1]}-12-31"))
-    out = annual_mean(stacked, years).transpose("depth", "year", "nlat", "nlon").values.astype(np.float32)   # one compute
-    return {d: out[i] for i, d in enumerate(n_levels)}
+    yr, mo = stacked["time"].dt.year.values, stacked["time"].dt.month.values
+    out = stacked.transpose("depth", "time", "nlat", "nlon").values.astype(np.float32)          # one compute
+    return {d: out[i] for i, d in enumerate(n_levels)}, yr, mo
+
+
+def seasonal_mean(monthly: np.ndarray, year_of: np.ndarray, month_of: np.ndarray, years: np.ndarray,
+                  months: Sequence[int] = range(1, 13)) -> np.ndarray:
+    """(..., nmonth, ...) monthly field → (..., nyear, ...) mean over ``months`` of each calendar year (NaN if absent)."""
+    axis = monthly.ndim - 3 if monthly.ndim >= 3 else 0            # the time axis sits before (lat, lon)
+    out = []
+    for y in years:
+        sel = (year_of == y) & np.isin(month_of, list(months))
+        out.append(np.nanmean(np.take(monthly, np.flatnonzero(sel), axis=axis), axis=axis) if sel.any()
+                   else np.full(monthly.shape[:axis] + monthly.shape[axis + 1:], np.nan, np.float32))
+    return np.stack(out, axis=axis)

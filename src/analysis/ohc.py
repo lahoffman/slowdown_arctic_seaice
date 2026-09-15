@@ -40,18 +40,28 @@ def _project_key(member_id: str) -> str:
     return f"{m.group(2)}.{int(m.group(1)):03d}"
 
 
-def load_ohc(path: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """OHC (nens, nyear, lat, lon) reordered to the project's cmip6 member order; returns (ohc, years, lat, lon)."""
+def load_ohc(path: Path, months: Sequence[int] = range(1, 13)) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    OHC (nens, nyear, lat, lon) as the mean over ``months`` of each year (default annual; (6, 7, 8) for JJA),
+    from the monthly file, one member at a time (the full monthly array is ~15 GB), reordered to the project's
+    cmip6 member order; returns (ohc, years, lat, lon).
+    """
+    from src.data.cesm2le.ohc import seasonal_mean
     with xr.open_dataset(path) as ds:
-        ohc, years = ds["ohc"].values, ds["nyear"].values.astype(int)
         lat, lon = ds["lat"].values, ds["lon"].values
         ids = [str(v) for v in ds["member_id"].values]
+        yr, mo = ds["year"].values.astype(int), ds["month"].values.astype(int)
+        years = np.unique(yr); sel = np.flatnonzero(np.isin(mo, list(months)))
+        out = np.empty((len(ids), years.size, lat.size, lon.size), np.float32)
+        for i in range(len(ids)):
+            monthly = ds["ohc"].isel(nens=i, time=sel).values
+            out[i] = seasonal_mean(monthly, yr[sel], mo[sel], years, months)
     want = [f"{str(m).split('.')[0]}.{str(m).split('.')[1]:0>3}" for m in CMIP6_MEMBERS]
     have = {_project_key(i): k for k, i in enumerate(ids)}
     order = [have[w] for w in want if w in have]
     if len(order) != len(ids):
         raise ValueError(f"member ids do not map onto CMIP6_MEMBERS ({len(order)}/{len(ids)})")
-    return ohc[order], years, lat, lon
+    return out[order], years, lat, lon
 
 
 def demean(field: np.ndarray) -> np.ndarray:

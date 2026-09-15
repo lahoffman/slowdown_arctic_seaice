@@ -35,10 +35,11 @@ from src.data.cesm2le.slowdowns_gmt import load_gmt_yearly
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--ohc-file", type=Path, default=paths.CESM2LE_DIR / "ohc" / "ohc100_cesmle_first50members_1990-2100.nc")
+    p.add_argument("--ohc-file", type=Path, default=paths.CESM2LE_DIR / "ohc" / "ohc100_cesmle_first50members_mon_1990-2100.nc")
     p.add_argument("--start-year", type=int, default=1990); p.add_argument("--end-year", type=int, default=2029)
     p.add_argument("--window", type=int, default=10); p.add_argument("--offsets", type=int, nargs="+", default=[0, 1])
     p.add_argument("--n-pcs", type=int, nargs="+", default=[20])
+    p.add_argument("--months", type=int, nargs="+", default=list(range(1, 13)), help="months averaged for the OHC predictor (default annual, as LB22)")
     p.add_argument("--cv", action="store_true", help="all five member blocks instead of the last one")
     p.add_argument("--ann", action="store_true", help="add an LB22-style MLP (2×30) on the PCs, one seed")
     p.add_argument("--no-fig", action="store_true")
@@ -50,7 +51,7 @@ def main():
     out_dir = paths.RESULTS_DIR / "ohc" / "lb22_test"; out_dir.mkdir(parents=True, exist_ok=True)
     onsets = np.arange(a.start_year, a.end_year + 1)
 
-    ohc, oyears, lat, lon = A.load_ohc(a.ohc_file)
+    ohc, oyears, lat, lon = A.load_ohc(a.ohc_file, a.months)
     ohc_anom = A.demean(ohc)
     ocean = np.isfinite(ohc[0, 0]).ravel()
     gmt, gyears = load_gmt_yearly(str(paths.CESM2LE_TREF_DIR / "gmt"), member_groups=["first50"], start_year=1990, end_year=2100)

@@ -37,15 +37,17 @@ def parse_args():
     p.add_argument("--start-year", type=int, default=1990); p.add_argument("--end-year", type=int, default=2029)
     p.add_argument("--window", type=int, default=10); p.add_argument("--offset", type=int, default=1)
     p.add_argument("--n-pcs", type=int, nargs="+", default=[10])
+    p.add_argument("--months", type=int, nargs="+", default=[6, 7, 8], help="months averaged for the OHC predictor (default JJA, as the SST input)")
     p.add_argument("--cv", action="store_true"); p.add_argument("--no-fig", action="store_true")
     return p.parse_args()
 
 
 def main():
     a = parse_args()
-    out_dir = paths.RESULTS_DIR / "ohc" / f"sie_ledger_{a.depth}"; out_dir.mkdir(parents=True, exist_ok=True)
+    tag = "annual" if sorted(a.months) == list(range(1, 13)) else "".join("JFMAMJJASOND"[m - 1] for m in sorted(a.months))
+    out_dir = paths.RESULTS_DIR / "ohc" / f"sie_ledger_{a.depth}_{tag}"; out_dir.mkdir(parents=True, exist_ok=True)
     onsets = np.arange(a.start_year, a.end_year + 1)
-    ohc, years, lat, lon = A.load_ohc(paths.CESM2LE_DIR / "ohc" / f"ohc{a.depth}_cesmle_first50members_1990-2100.nc")
+    ohc, years, lat, lon = A.load_ohc(paths.CESM2LE_DIR / "ohc" / f"ohc{a.depth}_cesmle_first50members_mon_1990-2100.nc", a.months)
     anom = A.demean(ohc); nens = ohc.shape[0]
     idx = np.searchsorted(years, onsets)
 
@@ -105,7 +107,7 @@ def main():
         from src.plotting import ohc as plot, style as st
         st.paper_rc()
         delta = {k: df[df.predictor == k]["delta"].values for k in med.index}
-        plot.plot_sie_ledger(delta, corr, lat, lon, paths.FIGURES_DIR / "diagnostics" / f"ohc_sie_ledger_{a.depth}.png",
+        plot.plot_sie_ledger(delta, corr, lat, lon, paths.FIGURES_DIR / "diagnostics" / f"ohc_sie_ledger_{a.depth}_{tag}.png",
                              float(np.nanmedian(base)))
 
 
