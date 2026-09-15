@@ -95,9 +95,9 @@ ERSST_FILE = ERSST_DIR / 'sst.mnmean.nc'
 
 # processed  (outputs of scripts that follow download)
 ERSST_REGRIDDED    = ERSST_DIR / 'sst_regrid_cesm2le.nc'
-ERSST_NINO34       = ERSST_DIR / 'ersst_nino34_index.nc'
-ERSST_ENSO_CPTP    = ERSST_DIR / 'ersst_enso_cptp_indices.nc'
-ERSST_IPO          = ERSST_DIR / 'ersst_ipo_index.nc'
+ERSST_NINO34       = ERSST_DIR / 'ersstv5_nino34_index.nc'
+ERSST_ENSO_CPTP    = ERSST_DIR / 'ersstv5_enso_cptp_indices.nc'
+ERSST_IPO          = ERSST_DIR / 'ersstv5_ipo_index.nc'
 ERSST_ARCTIC_SST   = ERSST_DIR / 'ersstv5_arctic_sst_index.nc'
 ERSST_TESTING      = ERSST_DIR / 'ersstv5_testing_forced_ensmean.nc'
 

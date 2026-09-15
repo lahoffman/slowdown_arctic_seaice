@@ -41,8 +41,8 @@ TRAIN = dict(learning_rate=1e-4, num_epochs=50, batch_size=120, patience=10, tas
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--tag", required=True, help="classification tag whose split files supply the inputs")
-    p.add_argument("--labels-file", type=Path,
-                   default=paths.CESM2LE_DIR / "slowdowns" / "cesm2le_sie_slowdown_relative_SEP_w10_s1_group_1990-2100.nc")
+    p.add_argument("--labels-file", type=Path, default=None,
+                   help="relative-labels file supplying trend_anom; default: the file the tag's splits were built from")
     p.add_argument("--splits", type=int, nargs="+", default=list(range(9)))
     p.add_argument("--n-runs", type=int, default=5)
     p.add_argument("--epochs", type=int, default=TRAIN["num_epochs"])
@@ -56,6 +56,9 @@ def main():
     sp0 = load_tvt_split(paths.tvt_split_path(0, a.tag))
     y0, y1 = (int(v) for v in sp0["attrs"]["target_years"].split("-"))
     years = np.arange(y0, y1 + 1)
+    if a.labels_file is None:
+        a.labels_file = Path(sp0["attrs"]["labels_file"])
+    print(f"target: trend_anom from {a.labels_file}")
     with xr.open_dataset(a.labels_file) as ds:
         trend = ds["trend_anom"].sel(nyr=slice(y0, y1)).values.astype(np.float32)          # (nens, nyear)
     _, sie_anom = bl.load_sie_anomaly(paths.CESM2LE_AICE_DIR / "metrics", years, demean="group")
