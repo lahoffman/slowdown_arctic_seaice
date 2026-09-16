@@ -88,6 +88,41 @@ def residual_skill(trend_anom: np.ndarray, sie_anom: np.ndarray, idx_onset: Dict
     )
 
 
+def pc_skill(trend_anom: np.ndarray, state: Sequence[np.ndarray], field_onset: np.ndarray, field_conc: np.ndarray,
+             years: np.ndarray, cell_mask: np.ndarray, n_pcs: Sequence[int] = (10, 20), n_splits: int = 9,
+             alpha: float = 10.0) -> xr.Dataset:
+    """
+    Stage 2 with a field instead of indices: PCs of the (masked) SST field at onset or averaged over the trend
+    decade, fitted by ridge to the stage-1 residual. Returns Dataset(timing, n_pcs, split) of ΔR² over the state.
+    """
+    from sklearn.decomposition import PCA
+    from sklearn.linear_model import Ridge
+    nens, nyr = trend_anom.shape
+    flat = lambda f: f.reshape(nens, nyr, -1)[..., cell_mask]
+    F = {"onset": flat(field_onset), "conc": flat(field_conc)}
+    out = np.full((2, len(n_pcs), n_splits), np.nan)
+    for k, te_b, va_b, tr_b in bl.iter_split_blocks(n_splits, 10):
+        d = bl.split_scalars({"trend": trend_anom, **{f"s{i}": v for i, v in enumerate(state)}}, years, tr_b, va_b, te_b)
+        mem_tr, mem_te = d["tr"]["member"].astype(int), d["te"]["member"].astype(int)
+        yr_tr, yr_te = np.searchsorted(years, d["tr"]["year"]), np.searchsorted(years, d["te"]["year"])
+        y_tr, y_te = d["tr"]["trend"], d["te"]["trend"]
+        s_tr = np.column_stack([d["tr"][f"s{i}"] for i in range(len(state))])
+        s_te = np.column_stack([d["te"][f"s{i}"] for i in range(len(state))])
+        fit_tr, fit_te, _ = _ols(s_tr, y_tr, s_te); r2_state = _r2(y_te, fit_te)
+        for i, timing in enumerate(("onset", "conc")):
+            X_tr, X_te = F[timing][mem_tr, yr_tr], F[timing][mem_te, yr_te]
+            ok_tr, ok_te = np.isfinite(X_tr).all(1) & np.isfinite(y_tr), np.isfinite(X_te).all(1) & np.isfinite(y_te)
+            for j, k_pc in enumerate(n_pcs):
+                pca = PCA(n_components=k_pc, svd_solver="randomized", random_state=0).fit(X_tr[ok_tr])
+                P_tr, P_te = pca.transform(X_tr[ok_tr]), pca.transform(X_te[ok_te])
+                mu, sd = P_tr.mean(0), P_tr.std(0) + 1e-12
+                Z_tr = np.column_stack([s_tr[ok_tr], (P_tr - mu) / sd]); Z_te = np.column_stack([s_te[ok_te], (P_te - mu) / sd])
+                m = Ridge(alpha=alpha).fit(Z_tr, y_tr[ok_tr])
+                out[i, j, k] = _r2(y_te[ok_te], m.predict(Z_te)) - _r2(y_te[ok_te], fit_te[ok_te])
+    return xr.Dataset({"delta_r2": (("timing", "n_pcs", "split"), out)},
+                      coords={"timing": ["onset", "conc"], "n_pcs": list(n_pcs), "split": np.arange(n_splits)})
+
+
 def pooled_residual(trend_anom: np.ndarray, *state: np.ndarray) -> Tuple[np.ndarray, float]:
     """Residual of trend ~ state scalars fit on all member-years (descriptive maps only); returns (resid, r²)."""
     y = trend_anom.ravel(); X = np.column_stack([s.ravel() for s in state])

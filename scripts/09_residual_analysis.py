@@ -39,6 +39,10 @@ def parse_args():
     p.add_argument("--siv-months", nargs="+", default=["SEP"],
                    help="months of sea-ice volume to test as extra ice-state scalars (e.g. SEP MAR); "
                         "MAR of the onset year precedes the September onset, so it is a legitimate predictor")
+    p.add_argument("--sst-pcs", type=int, nargs="*", default=[10, 20],
+                   help="PCs of the SST field (onset and decade-mean) as a stage-2 predictor set; empty to skip")
+    p.add_argument("--pc-mask-north", type=float, default=65.0,
+                   help="exclude SST poleward of this latitude from the PCs (Arctic SST is the ice state itself)")
     p.add_argument("--no-maps", action="store_true"); p.add_argument("--no-fig", action="store_true")
     return p.parse_args()
 
@@ -78,10 +82,20 @@ def main():
         md += (f"\n## With {mon} sea-ice volume (step 8.5)\n\nStage-1 test R² (median): SIE {float(ds['r2_sie'].median()):.3f}, "
                f"{mon} volume alone {float(ds_v['r2_sie'].median()):.3f}, SIE + {mon} volume **{float(ds_sv['r2_sie'].median()):.3f}**.\n\n"
                + rs.summary_markdown(ds_sv, r2_sv, window=window).split("\n", 2)[2])
-    (out_dir / "residual_summary.md").write_text(md); print("\n" + md)
+    # pooled residual for the tail-asymmetry script (09_tail_asymmetry.py)
+    siv_sep = bl.load_siv_anomaly(paths.CESM2LE_AICE_DIR / "metrics", years, month="SEP", demean="group")
+    state = [sie_anom] + ([siv_sep] if siv_sep is not None else [])
+    resid_pooled, r2_state = rs.pooled_residual(trend, *state)
+    fit_pooled = trend - resid_pooled
+    xr.Dataset({"trend_anom": (("nens", "year"), trend), "fit_state": (("nens", "year"), fit_pooled),
+                "residual": (("nens", "year"), resid_pooled), "sie_anom": (("nens", "year"), sie_anom),
+                **({"siv_anom": (("nens", "year"), siv_sep)} if siv_sep is not None else {})},
+               coords={"year": years}, attrs={"state": "sie_anom" + (" + siv_SEP" if siv_sep is not None else ""),
+                                               "r2_pooled": r2_state, "window": window, "offset": offset}
+               ).to_netcdf(out_dir / "residual_pooled.nc")
 
     if a.no_maps:
-        return
+        (out_dir / "residual_summary.md").write_text(md); print("\n" + md); return
     from src.cnn.splits import load_jja_sst_demeaned
     with nc.Dataset(paths.CESM2LE_GRID_FILE) as g:
         lat, lon = np.array(g["lat"][:]), np.array(g["lon"][:])
@@ -90,11 +104,23 @@ def main():
     print("\nloading JJA SST (onset year) ...")
     sst_onset, _ = load_jja_sst_demeaned(paths.CESM2LE_SST_MONTHLY, start_year=a.start_year,
                                          end_year=a.end_year, demean="group")
-    r_onset = np.where(land, np.nan, rs.correlation_map(resid, sst_onset)); del sst_onset
+    r_onset = np.where(land, np.nan, rs.correlation_map(resid, sst_onset))
+    sst_onset_keep = sst_onset if a.sst_pcs else None; del sst_onset
     print(f"loading JJA SST ({window}-yr running mean) ...")
     sst_conc, _ = load_jja_sst_demeaned(paths.CESM2LE_SST_MONTHLY, start_year=a.start_year + offset,
                                         end_year=a.end_year + offset, demean="group", sst_window=window)   # decade t+offset …
-    r_conc = np.where(land, np.nan, rs.correlation_map(resid, sst_conc)); del sst_conc
+    r_conc = np.where(land, np.nan, rs.correlation_map(resid, sst_conc))
+    if a.sst_pcs:
+        cell_mask = (~land & (lat[:, None] < a.pc_mask_north) & np.ones((1, lon.size), bool)).ravel()
+        ds_pc = rs.pc_skill(trend, state, sst_onset_keep, sst_conc, years, cell_mask, a.sst_pcs)
+        ds_pc.to_netcdf(out_dir / "residual_skill_sst_pcs.nc")
+        md += (f"\n## SST field as PCs (poleward of {a.pc_mask_north:g}°N excluded), ΔR² over the ice state ({', '.join(['sie'] + (['siv'] if siv_sep is not None else []))})\n\n"
+               "| PCs | onset | concurrent (decade mean) |\n|---|---|---|\n" +
+               "\n".join(f"| {k} | {float(ds_pc.delta_r2.sel(n_pcs=k, timing='onset').median()):+.3f} | "
+                         f"{float(ds_pc.delta_r2.sel(n_pcs=k, timing='conc').median()):+.3f} |" for k in a.sst_pcs) + "\n")
+        del sst_onset_keep
+    del sst_conc
+    (out_dir / "residual_summary.md").write_text(md); print("\n" + md)
     xr.Dataset({"r_onset": (("lat", "lon"), r_onset), "r_conc": (("lat", "lon"), r_conc)},
                coords={"lat": lat, "lon": lon}).to_netcdf(out_dir / "residual_corr_maps.nc")
     for name, r in (("onset", r_onset), ("concurrent", r_conc)):

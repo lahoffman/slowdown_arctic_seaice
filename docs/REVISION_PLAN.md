@@ -389,3 +389,33 @@ python scripts/09_sensitivity_sweep.py  # (offset option to add if the sweep is 
 | 9 | Phase 7 clean-up: Discussion/Conclusions split, Key Points, SI numbering, repo configs | — | 1 week | |
 
 Row 1 answered the original decision gate: the CNN was learning the forced epoch plus the initial ice state. Rows 2–5 are the retrain that decides between Branch A and B; nothing in Phase 6 or 7 should be written until 1.8 is resolved, except the parts that are branch-independent (6.1, 6.2, 6.7, and the clean-up items).
+
+---
+
+## 2026-09-15 (afternoon): lessons-learned restructure, GMT ledger, decadal-ML audit
+
+- **GMT ledger** (`09_ohc_ledger.py --target gmt`): GMT state R² 0.019 at offset 1; OHC adds +0.07 (global map, 10/20 PCs), +0.05 (trop. Pacific), +0.09 (IPO); residual map = negative-IPO pattern. Confirms the ¼ "real" part of the LB22 decomposition and names it (Pacific decadal state). SIE ledger flat (≤ +0.013). New manuscript Fig. 5 = `make_figure.py ledger` (`fig_ledger.pdf`), GMT row over SIE row.
+- **lb22_cv fixed** (sklearn `hidden_layer_sizes` kwarg); rerun pending → replace §Discussion TODO with five-block medians + MLP row.
+- **Obs, σ from model**: no observed onset since 1990 reaches 1σ (max z 0.74, 2006). Sentence added to §Observations; result is conditional on the σ choice.
+- **main.tex restructured as an AIES "Lessons Learned" paper** (template: Mamalakis et al. 2023), in review markup (`\add/\remove/\change`, `\finaltrue` to accept): new title ("Keep the onset year out of the window: …"), abstract/significance reframed, intro paragraph on the two case studies and portability, Fig. `gmt_coupling_check` as the mechanism figure (interannual → SI), ledger figure swapped, LB22 paragraph in first person plural + ledger numbers, new "Portability" paragraph, Conclusions → "Lessons learned" with rule (vii). Compiles (only `fig:products` undefined, pre-existing).
+- **Decadal-ML audit** (`docs/LITERATURE_DECADAL_ML.md`): Gordon21/22, Rader23, Fernandez25 all use forward-mean or single-year targets → not exposed; LB22 is the exception; recurring gap = state baseline. Bib: Gordon21, Gordon22, Rader23, Fernandez25, Meehl11.
+- **Discussion deck for Zach**: `manuscript_aies/discussion_deck_labe.pptx` (11 slides, plain). Needs `gmt_coupling_check.png` and `fig_ledger.pdf` once synced (`./sync_figures.sh` after the queue).
+- Queue still on postprocess (10:53 start). Remaining: off1_pacific row → Fig. 3/4 caption; obs CNN votes; STATUS.md refresh; SI renumbering (S20 interannual, S21 residual analysis, training curves).
+
+## 2026-09-15 (night): two papers, drafts rewritten
+
+- **Decision**: (A) AIES Lessons Learned = `manuscript_aies/main.tex` (clean rewrite; audit version archived as
+  `main_audit_markup.tex`); (B) GRL = `manuscript/manuscript_v2.tex` (fresh draft; v1 `manuscript.tex` kept).
+  Trackchanges were not used for either because the restructure replaced >80% of the text; from here on edits
+  go back to `\add/\remove/\change`.
+- Paper B target: offset 10-yr trend as a continuous variable (both tails; 1σ labels secondary). Predictors: ice
+  state → SST indices / PCs / CNN → OHC100/300/700 → concurrent (decade-mean) ocean as upper bound. Not an
+  initial-value-curve paper (would duplicate Hoffman et al. 2025), not an attribution paper.
+- New compute (`scripts/run_ohc2.sh`): residual analysis with extra-Arctic SST PCs onset+concurrent
+  (`--sst-pcs`), `09_tail_asymmetry.py`, OHC ledger `--concurrent --exclude-north 65`, OHC700 extraction + ledgers.
+- Figures to build: paper B `fig_ledger_grl.pdf` (ice → indices → PCs → CNN → OHC by depth, onset vs concurrent;
+  + GMT panel), `fig_maps_grl.pdf` (residual corr with SST/OHC, onset & concurrent), `fig_1` with offset window +
+  tail histogram; paper A three-panel `fig:sie` (fig_2 + occlusion + baselines both labels), `fig:gmt`
+  (lb22 bars + fig_ledger). Add `make_figure` ids `ledger_grl`, `maps_grl`, `sie_case`, `gmt_case`.
+- Bib: `manuscript/references.bib` +Oldham62, Meehl11, Kosaka13, England14, Yeager15, Arthun12, Onarheim15,
+  Bushuk19, England19, Hoffman26 (AIES, in prep); `manuscript_aies/references.bib` +Hoffman26b (GRL, in prep).

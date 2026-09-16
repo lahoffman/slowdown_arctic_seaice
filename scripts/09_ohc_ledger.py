@@ -41,6 +41,11 @@ def parse_args():
     p.add_argument("--window", type=int, default=10); p.add_argument("--offset", type=int, default=1)
     p.add_argument("--n-pcs", type=int, nargs="+", default=[10])
     p.add_argument("--months", type=int, nargs="+", default=None, help="months averaged for the OHC predictor (default JJA for sie, annual for gmt)")
+    p.add_argument("--concurrent", action="store_true",
+                   help="use the OHC anomaly averaged over the trend window t+offset … t+offset+window−1 instead of the onset year "
+                        "(upper bound: does even the realised ocean explain the residual?)")
+    p.add_argument("--exclude-north", type=float, default=None,
+                   help="drop OHC poleward of this latitude from the map PCs and 'all regions' (e.g. 65 for the concurrent case)")
     p.add_argument("--cv", action="store_true"); p.add_argument("--no-fig", action="store_true")
     return p.parse_args()
 
@@ -50,11 +55,18 @@ def main():
     if a.months is None:
         a.months = [6, 7, 8] if a.target == "sie" else list(range(1, 13))
     tag = "annual" if sorted(a.months) == list(range(1, 13)) else "".join("JFMAMJJASOND"[m - 1] for m in sorted(a.months))
+    if a.concurrent:
+        tag += "_conc"
     out_dir = paths.RESULTS_DIR / "ohc" / f"{a.target}_ledger_{a.depth}_{tag}"; out_dir.mkdir(parents=True, exist_ok=True)
     onsets = np.arange(a.start_year, a.end_year + 1)
     ohc, years, lat, lon = A.load_ohc(paths.CESM2LE_DIR / "ohc" / f"ohc{a.depth}_cesmle_first50members_mon_1990-2100.nc", a.months)
     anom = A.demean(ohc); nens = ohc.shape[0]
     idx = np.searchsorted(years, onsets)
+    if a.concurrent:                                         # decade-mean anomaly over the target window
+        from src.analysis.residual import window_mean
+        anom_at = window_mean(anom, years, onsets + a.offset, a.window)
+    else:
+        anom_at = anom[:, idx]
 
     if a.target == "sie":
         series = bl.load_sie_anomaly(paths.CESM2LE_AICE_DIR / "metrics", np.arange(1990, 2101), demean="group")[0][:nens]
@@ -73,11 +85,15 @@ def main():
 
     y = A.trend_anomaly(series, years, onsets, a.window, a.offset)
     ok_year = np.isfinite(y).all(0)
-    regions = A.region_scalars(anom[:, idx], lat, lon)
-    north = (lat >= lat_min)[:, None] & np.ones((1, lon.size), bool)
-    ocean_n = (north & np.isfinite(ohc[0, 0])).ravel()
-    map_name = f"OHC map >{lat_min}N" if lat_min > -90 else "OHC map (global)"
-    maps = anom[:, idx].reshape(nens, onsets.size, -1)
+    regions = A.region_scalars(anom_at, lat, lon)
+    if a.exclude_north is not None:
+        regions = {k: v for k, v in regions.items() if A.REGIONS[k][0] < a.exclude_north or k == "global"}
+    band = (lat >= lat_min)[:, None] & np.ones((1, lon.size), bool)
+    if a.exclude_north is not None:
+        band &= (lat < a.exclude_north)[:, None]
+    ocean_n = (band & np.isfinite(ohc[0, 0])).ravel()
+    map_name = (f"OHC map >{lat_min}N" if lat_min > -90 else "OHC map (global)") + (f" <{a.exclude_north:g}N" if a.exclude_north is not None else "")
+    maps = anom_at.reshape(nens, onsets.size, -1)
 
     rows, base = [], []
     for tr, te in A.splits(nens, single=not a.cv):
@@ -99,8 +115,9 @@ def main():
 
     df = pd.DataFrame(rows); df.to_csv(out_dir / "ledger.csv", index=False)
     med = df.groupby("predictor")["delta"].median().sort_values(ascending=False)
-    lines = [f"# OHC{a.depth} ({tag}) at onset and the decadal {a.target.upper()} trend (cmip6, 50 members, offset {a.offset}, {a.window}-yr windows)\n",
-             f"Stage 1 ({state_label}: {', '.join(state)}) test R² = {np.nanmedian(base):.3f}. Added test R² from OHC predictors at onset (median over blocks):\n",
+    when = "averaged over the trend window" if a.concurrent else "at onset"
+    lines = [f"# OHC{a.depth} ({tag}) {when} and the decadal {a.target.upper()} trend (cmip6, 50 members, offset {a.offset}, {a.window}-yr windows)\n",
+             f"Stage 1 ({state_label}: {', '.join(state)}) test R² = {np.nanmedian(base):.3f}. Added test R² from OHC predictors {when} (median over blocks):\n",
              "| predictor | ΔR² |", "|---|---|"] + [f"| {k} | {v:+.3f} |" for k, v in med.items()]
     md = "\n".join(lines) + "\n"; (out_dir / "summary.md").write_text(md); print("\n" + md)
 
