@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-make_figures_aies.py — build every figure the AIES manuscript includes, from the manifest in
-configs/figures_aies.py, into results/figures/aies/ under the manuscript's own filenames.
+make_figures_aies.py — build every figure a manuscript includes (--paper aies|grl), from the manifest in
+configs/figures_<paper>.py, into results/figures/<paper>/ under the manuscript's own filenames.
 
 make_figure entries are grouped by identical options and built in one make_figure.py call each
 (shared data cache); diagnostic entries are copied from results/figures/diagnostics/. Missing
@@ -13,6 +13,7 @@ Usage:
   python scripts/make_figures_aies.py --only fig_S5.pdf fig_2.pdf
   python scripts/make_figures_aies.py --diagnostics-only     # just copy the 09_*/10_* PNGs (seconds)
   python scripts/make_figures_aies.py --list
+  python scripts/make_figures_aies.py --paper grl           # the GRL paper (configs/figures_grl.py)
 """
 
 import argparse
@@ -27,9 +28,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from configs import paths
-from configs.figures_aies import MANIFEST
+import importlib
 
-OUT = paths.FIGURES_DIR / "aies"
 DIAG = paths.FIGURES_DIR / "diagnostics"
 
 
@@ -39,11 +39,15 @@ def parse_args():
     p.add_argument("--diagnostics-only", action="store_true")
     p.add_argument("--fmt", default="pdf", choices=["pdf", "png"])
     p.add_argument("--list", action="store_true")
+    p.add_argument("--paper", default="aies", choices=["aies", "grl"],
+                   help="which manifest (configs/figures_<paper>.py) and output folder (results/figures/<paper>/)")
     return p.parse_args()
 
 
 def main():
     a = parse_args()
+    MANIFEST = importlib.import_module(f"configs.figures_{a.paper}").MANIFEST
+    OUT = paths.FIGURES_DIR / a.paper
     items = {k: v for k, v in MANIFEST.items() if not a.only or k in a.only}
     if a.list:
         for k, v in items.items():
@@ -86,7 +90,7 @@ def main():
                     status[name] = ("missing", f"needs {v['needs']}")
 
     # 3. status table
-    lines = ["# AIES figure status\n", f"built {time.strftime('%Y-%m-%d %H:%M')} on {Path.home().name}@{__import__('socket').gethostname()}\n",
+    lines = [f"# {a.paper.upper()} figure status\n", f"built {time.strftime('%Y-%m-%d %H:%M')} on {Path.home().name}@{__import__('socket').gethostname()}\n",
              "| file | status | built / needs |", "|---|---|---|"]
     for name in items:
         st, note = status.get(name, ("skipped", ""))

@@ -32,6 +32,7 @@ from src.cnn.splits import load_tvt_split
 from src.data.cesm2le.slowdowns import load_sie_monthly_files
 from src.plotting import paper, style as st
 from src.plotting import ohc as ohc_plot
+from src.plotting import ledger_grl as lg
 
 MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 N_SPLITS, N_SEEDS, BLOCK_SIZE, START_YEAR = 9, 5, 10, 1990
@@ -213,6 +214,83 @@ class Data:
                                 ohc_label=f"{months} OHC{self.a.ohc_depth}")
             return out
         return self.get("ohc_ledger", _load)
+
+    # -- GRL paper (paper B) -------------------------------------------------
+    def _ohc_ledger_dir(self, target, depth, months, conc=False):
+        d = paths.RESULTS_DIR / "ohc" / f"{target}_ledger_{depth}_{months}{'_conc' if conc else ''}"
+        csv = d / "ledger.csv" if (d / "ledger.csv").exists() else d / "sie_ledger.csv"
+        return d, (csv if csv.exists() else None)
+
+    def ledger_grl(self):
+        """Everything fig_ledger_grl needs: residual analysis (indices, SST PCs, CNN), OHC ledgers by depth, GMT ledger."""
+        def _load():
+            import pandas as pd
+            key = f"w{self.a.window}_off{self.a.trend_offset or 1}"
+            rd = paths.RESULTS_DIR / "residual" / key
+            if not (rd / "residual_skill.nc").exists():
+                raise FileNotFoundError(f"{rd}/residual_skill.nc (09_residual_analysis.py --labels-file <off1 labels>)")
+            out = {}
+            with xr.open_dataset(rd / "residual_skill.nc") as ds:
+                out["r2_sie"] = ds["r2_sie"].values
+                sets = [str(x) for x in ds["set"].values]
+                out["idx_onset"] = {k: (ds["r2_sie_plus"].sel(set=k, timing="onset") - ds["r2_sie"]).values for k in sets}
+                out["idx_conc"] = {k: (ds["r2_sie_plus"].sel(set=k, timing="conc") - ds["r2_sie"]).values for k in sets}
+            f = rd / "residual_skill_sie_sivSEP.nc"
+            out["r2_sie_siv"] = xr.open_dataset(f)["r2_sie"].values if f.exists() else None
+            f = rd / "residual_skill_sst_pcs.nc"
+            out["pcs_onset"], out["pcs_conc"] = {}, {}
+            if f.exists():
+                with xr.open_dataset(f) as ds:
+                    for k in ds["n_pcs"].values:
+                        out["pcs_onset"][int(k)] = ds["delta_r2"].sel(n_pcs=k, timing="onset").values
+                        out["pcs_conc"][int(k)] = ds["delta_r2"].sel(n_pcs=k, timing="conc").values
+            f = paths.RESULTS_DIR / "regression" / (self.a.tag or "off1_aux") / "regress_scores.nc"
+            out["cnn"] = (lambda ds: (ds["r2_cnn"] - ds["r2_sie"]).values)(xr.open_dataset(f)) if f.exists() else None
+            # OHC heat-map: rows = regions (+ map PCs), columns = depth × timing
+            cols, mats, rows = [], [], None
+            for depth in (100, 300, 700):
+                for conc in (False, True):
+                    _, csv = self._ohc_ledger_dir("sie", depth, "JJA", conc)
+                    if csv is None:
+                        continue
+                    df = pd.read_csv(csv); med = df.groupby("predictor")["delta"].median()
+                    if rows is None:
+                        rows = [r for r in med.index if not r.startswith("OHC map")] + sorted(r for r in med.index if r.startswith("OHC map"))
+                    cols.append(f"{depth} m, {'decade mean' if conc else 'onset'}")
+                    mats.append([float(med.get(r, np.nan)) for r in rows])
+            if rows is None:
+                raise FileNotFoundError("no results/ohc/sie_ledger_*_JJA*/ledger.csv (09_ohc_ledger.py)")
+            out["ohc_rows"], out["ohc_cols"], out["ohc_matrix"] = rows, cols, np.array(mats).T
+            # GMT ledger
+            _, csv = self._ohc_ledger_dir("gmt", 100, "annual")
+            if csv is not None:
+                df = pd.read_csv(csv); med = df.groupby("predictor")["delta"].median().sort_values(ascending=False)
+                keep = [k for k in med.index if k in ("global", "trop_pacific", "north_pacific", "subpolar_atl") or k.startswith("OHC map") or k.startswith("IPO")]
+                out["gmt"] = dict(base=float(np.nanmedian(df["r2_full"] - df["delta"])),
+                                  delta={k: df[df.predictor == k]["delta"].values for k in keep})
+            else:
+                out["gmt"] = None
+            return out
+        return self.get("ledger_grl", _load)
+
+    def maps_grl(self):
+        """Residual-correlation maps: SST (09_residual_analysis) and OHC100 (09_ohc_ledger, onset and --concurrent)."""
+        def _load():
+            key = f"w{self.a.window}_off{self.a.trend_offset or 1}"
+            f = paths.RESULTS_DIR / "residual" / key / "residual_corr_maps.nc"
+            if not f.exists():
+                raise FileNotFoundError(f"{f} (09_residual_analysis.py without --no-maps)")
+            with xr.open_dataset(f) as ds:
+                out = dict(sst_onset=ds["r_onset"].values, sst_conc=ds["r_conc"].values, lat=ds["lat"].values, lon=ds["lon"].values)
+            for name, conc in (("ohc_onset", False), ("ohc_conc", True)):
+                d, _ = self._ohc_ledger_dir("sie", 100, "JJA", conc); g = d / "residual_ohc_corr.nc"
+                if g.exists():
+                    with xr.open_dataarray(g) as da:
+                        out[name] = da.values; out["olat"], out["olon"] = da["lat"].values, da["lon"].values
+                else:
+                    out[name] = None
+            return out
+        return self.get("maps_grl", _load)
 
     def histories(self):
         """Training histories of every saved model for this tag."""
@@ -431,6 +509,8 @@ FIGURES = {
     "learning_curves": (lambda d: paper.fig_learning_curves(d.histories()), "loss vs epoch, all 45 CNNs of a tag"),
     "occlusion": (lambda d: paper.fig_occlusion(d.occlusion()), "region occlusion, all configurations"),
     "ledger":    (lambda d: ohc_plot.fig_ledger_compare(d.ohc_ledger()), "OHC memory beyond the state: GMT vs SIE (09_ohc_ledger.py)"),
+    "ledger_grl": (lambda d: lg.fig_ledger_grl(d.ledger_grl()), "GRL Fig. 2: ice state → ocean surface → OHC by depth → GMT ledger"),
+    "maps_grl":   (lambda d: lg.fig_maps_grl(d.maps_grl()), "GRL Fig. 3: residual correlation with SST and OHC100, onset and decade mean"),
 }
 
 

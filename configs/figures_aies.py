@@ -8,7 +8,7 @@ One entry per file that main.tex / supplement.tex includes (the key is the filen
   diagnostic  : copy results/figures/diagnostics/<src> (written by a 09_*/10_*/05b script) to the key.
 ``needs`` names the run that must exist first (for the status table only).
 
-Edit here, never in sync_figures.sh. scripts/make_figures_aies.py reads this.
+Edit here, never in sync_figures.sh. scripts/make_figures.py reads this.
 """
 
 OFF1 = ["--trend-offset", "1"]                 # offset labels (window t+1 … t+10, onsets ≤ 2029)

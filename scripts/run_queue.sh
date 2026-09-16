@@ -45,5 +45,5 @@ step regress_pacific    $PY -u scripts/04_cesm2le_cnn_regress.py --tag off1_paci
 step obs_ersst          $PY -u scripts/10_obs_baseline_predict.py --labels-file "$LBL1" --forced linear --tag off1_aux --product ersst
 step obs_oisst          $PY -u scripts/10_obs_baseline_predict.py --labels-file "$LBL1" --forced linear --tag off1_aux --product oisst
 step event_stats        $PY -u scripts/09_event_stats.py --tag off1_aux --labels-file "$LBL1"
-step figures_aies       $PY -u scripts/make_figures_aies.py
+step figures_aies       $PY -u scripts/make_figures.py
 echo; echo "==== $(date)  queue finished"
