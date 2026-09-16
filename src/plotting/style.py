@@ -57,9 +57,10 @@ def save(fig, out_png, dpi: int = 200) -> None:
     import warnings
     out_png = Path(out_png)
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)   # shared-colorbar grids
-        fig.tight_layout()
+    if fig.get_layout_engine() is None:                 # figures built with constrained_layout manage themselves
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)   # shared-colorbar grids
+            fig.tight_layout()
     fig.savefig(out_png, dpi=dpi)
     plt.close(fig)
     print(f"  figure → {out_png}")
