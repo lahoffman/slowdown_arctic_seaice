@@ -323,10 +323,28 @@ def calculate_sea_ice_volume(hi_file: str, tarea_file: str, lat_threshold: float
 
     Args:
         hi_file: monthly ``hi`` file (m, CICE grid-cell mean = volume per cell area).
-        tarea_file: file with ``tarea`` (cm²) and ``TLAT``.
+        tarea_file: file with ``tarea`` (m², CESM2 CICE) and ``TLAT``.
         lat_threshold: cells with TLAT >= this are summed.
     Returns:
         volume in 10³ km³, same leading dims as ``hi``.
+
+    UNITS FIX, 2026-09-16 — READ BEFORE USING OLD OUTPUT.
+    This function previously carried a ``* 1e-4`` cm²→m² conversion, but CESM2
+    CICE writes ``tarea`` in m² (verified: ``tarea:units = "m2"`` on the raw
+    chunks). Every ``sivoln_*.nc`` written BEFORE this date is therefore 1e4 too
+    small — ~5e-4 where NH September should read ~5 ×10³ km³ — despite carrying a
+    ``10^3 km^3`` units attribute. Those files have NOT been regenerated.
+
+    No published result is affected: volume only ever enters downstream as the
+    demeaned anomaly ``siv_anom`` (src/analysis/baselines.load_siv_anomaly), and
+    test R², AUROC and correlations are all invariant to a uniform rescale of a
+    predictor. The manuscript numbers (SEP volume alone 0.078, SIE+volume 0.087)
+    stand.
+
+    THE ONE REAL HAZARD: do not mix legacy and regenerated files in a single fit
+    (e.g. two months of volume as separate predictors). Scale invariance holds
+    per predictor, not across predictors on different scales. Regenerate all
+    months together or none.
     """
     ds_hi, ds_grid = xr.open_dataset(hi_file), xr.open_dataset(tarea_file)
     if hi_var not in ds_hi:
@@ -334,9 +352,9 @@ def calculate_sea_ice_volume(hi_file: str, tarea_file: str, lat_threshold: float
     hi = np.nan_to_num(ds_hi[hi_var].values.astype(np.float64))
     tarea = ds_grid['tarea'].values
     lat = ds_grid['TLAT'].values if 'TLAT' in ds_grid else ds_grid['lat'].values
-    w = np.where(lat >= lat_threshold, tarea, 0.0)                    # cm²
+    w = np.where(lat >= lat_threshold, tarea, 0.0)                    # m²
     sp = tuple(range(hi.ndim - 2, hi.ndim))
-    vol = np.sum(hi * w, axis=sp) * 1e-4 / 1e9 / 1e3                  # m·cm² → m³ → km³ → 10³ km³
+    vol = np.sum(hi * w, axis=sp) / 1e9 / 1e3                         # m·m² → m³ → km³ → 10³ km³
     ds_hi.close(); ds_grid.close()
     if save_output:
         _save_metric(vol, save_output, 'sivoln', 'Northern Hemisphere sea ice volume', '10^3 km^3')

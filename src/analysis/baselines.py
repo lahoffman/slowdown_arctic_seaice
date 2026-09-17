@@ -93,7 +93,16 @@ def load_sie_anomaly(metrics_dir: Path, years: np.ndarray, month: str = "SEP",
 
 
 def load_siv_anomaly(metrics_dir: Path, years: np.ndarray, month: str = "SEP", demean: str = "group"):
-    """Sea-ice volume anomaly (10³ km³) at onset, or None if the sivoln_* files are missing."""
+    """Sea-ice volume anomaly at onset, or None if the sivoln_* files are missing.
+
+    Units caveat: files written before 2026-09-16 are 1e4 too small (a spurious
+    cm²→m² conversion in cesm2le.metrics.calculate_sea_ice_volume, fixed there;
+    those files were not regenerated), so they are NOT the 10³ km³ their units
+    attribute claims. Harmless here — this returns a demeaned anomaly used only
+    as a regression/logistic predictor, and R²/AUROC are invariant to a uniform
+    rescale. Do NOT, however, pass two months whose files were written on
+    opposite sides of that fix into the same fit.
+    """
     try:
         _, siv_anom = load_sie_anomaly(metrics_dir, years, month=month, variable="siv", demean=demean)
     except FileNotFoundError:
