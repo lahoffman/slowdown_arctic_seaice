@@ -1,0 +1,13 @@
+title: arcticWATCH notes
+author: Lauren Hoffman
+execute:
+  execute_notebooks: "off"      # notebooks are committed with their outputs
+bibtex_bibfiles:
+  - references.bib
+sphinx:
+  config:
+    bibtex_reference_style: author_year
+parse:
+  myst_enable_extensions:
+    - dollarmath
+    - amsmath

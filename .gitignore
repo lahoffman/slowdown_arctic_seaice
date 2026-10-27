@@ -58,3 +58,6 @@ Thumbs.db
 manuscript/
 manuscript_aies/
 manuscript_aies/
+
+# Jupyter Book build output
+book/_build/
